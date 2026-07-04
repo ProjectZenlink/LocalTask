@@ -6,8 +6,6 @@ import Signup from './pages/Signup'
 import Login from './pages/Login'
 import Verify from './pages/Verify'
 import BuildProfile from './pages/BuildProfile'
-import OnboardingPhone from './pages/OnboardingPhone'
-import OnboardingKYC from './pages/OnboardingKYC'
 import Settings from './pages/Settings'
 
 export default function App() {
@@ -19,8 +17,6 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/verify" element={<Verify />} />
         <Route path="/build-profile" element={<ProtectedRoute><BuildProfile /></ProtectedRoute>} />
-        <Route path="/onboarding/phone" element={<ProtectedRoute><OnboardingPhone /></ProtectedRoute>} />
-        <Route path="/onboarding/kyc" element={<ProtectedRoute><OnboardingKYC /></ProtectedRoute>} />
         <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
       </Routes>
     </Layout>

@@ -48,12 +48,3 @@ export const WALLET_OPTIONS: WalletOption[] = [
 
 export const TRON_ADDRESS_RE = /^T[1-9A-HJ-NP-Za-km-z]{33}$/
 export const EVM_ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/
-
-export type KycDocType = 'id_front' | 'id_back' | 'address_proof' | 'selfie_handheld'
-
-export const KYC_DOCS: { key: KycDocType; label: string; hint: string }[] = [
-  { key: 'id_front', label: 'Government ID — front', hint: 'Passport, driver\u2019s license, or state ID.' },
-  { key: 'id_back', label: 'Government ID — back', hint: 'Back side of the same ID.' },
-  { key: 'address_proof', label: 'Proof of address', hint: 'Bank or utility statement from the last 3 months, showing your name.' },
-  { key: 'selfie_handheld', label: 'Selfie holding your ID', hint: 'A clear photo of you holding the same ID beside your face.' },
-]
