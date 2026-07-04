@@ -3,7 +3,6 @@ import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import type { Profile } from '../types/database'
-import { PageHeading, Card, Eyebrow, StatusBadge } from '../components/ui'
 
 export default function Home() {
   const { user } = useAuth()
@@ -22,30 +21,28 @@ export default function Home() {
       })
   }, [user, navigate])
 
-  if (!loaded) return <div className="text-muted">Loading…</div>
+  if (!loaded) return <div className="text-gray-500">Loading…</div>
 
-  const kyc = profile?.kyc_status ?? 'none'
-  const badge: { status: 'verified' | 'pending' | 'unverified'; label: string } =
-    kyc === 'verified' ? { status: 'verified', label: 'Verified' }
-    : kyc === 'pending' ? { status: 'pending', label: 'Under review' }
-    : kyc === 'rejected' ? { status: 'unverified', label: 'Rejected' }
-    : { status: 'unverified', label: 'Not started' }
+  const kycLabel: Record<string, string> = {
+    none: 'Not started', pending: 'Under review', verified: 'Verified', rejected: 'Rejected',
+  }
 
   return (
     <div className="mx-auto max-w-lg">
-      <PageHeading>Welcome{profile?.display_name ? `, ${profile.display_name}` : ''}</PageHeading>
-      <Card className="p-5">
-        <Eyebrow>Account status</Eyebrow>
-        <div className="flex items-center justify-between border-b border-hair py-2.5">
-          <span className="text-sm text-muted">Identity verification</span>
-          <StatusBadge status={badge.status} label={badge.label} />
+      <h1 className="mb-6 text-xl font-semibold">
+        Welcome{profile?.display_name ? `, ${profile.display_name}` : ''}
+      </h1>
+      <div className="rounded border border-gray-200 bg-white p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <span className="text-sm text-gray-600">Identity verification</span>
+          <span className="text-sm font-medium">{kycLabel[profile?.kyc_status ?? 'none']}</span>
         </div>
-        <div className="flex items-center justify-between pt-3">
-          <span className="text-sm text-muted">Payout addresses</span>
-          <Link to="/settings" className="text-sm text-petrol underline underline-offset-2">Manage</Link>
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-gray-600">Payout addresses</span>
+          <Link to="/settings" className="text-sm text-gray-900 underline">Manage</Link>
         </div>
-      </Card>
-      <p className="mt-6 text-sm text-faint">
+      </div>
+      <p className="mt-6 text-sm text-gray-500">
         Task posting and browsing will open once identity verification goes live (coming next).
       </p>
     </div>

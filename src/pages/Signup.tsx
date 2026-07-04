@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { PageHeading, Field, Button, Alert } from '../components/ui'
 
 export default function Signup() {
   const [email, setEmail] = useState('')
@@ -14,28 +13,36 @@ export default function Signup() {
   async function handleSignup() {
     setError(null)
     setInfo(null)
-    if (!email || !password) { setError('Enter your email and a password.'); return }
+    if (!email || !password) { setError('Please enter your email and a password.'); return }
     if (password.length < 8) { setError('Password must be at least 8 characters.'); return }
     setBusy(true)
     const { data, error: err } = await supabase.auth.signUp({ email, password })
     setBusy(false)
     if (err) { setError(err.message); return }
-    if (data.session) navigate('/build-profile')
-    else setInfo('Check your email to confirm your account, then log in.')
+    if (data.session) {
+      navigate('/build-profile')
+    } else {
+      setInfo('Check your email to confirm your account, then log in.')
+    }
   }
 
   return (
     <div className="mx-auto max-w-sm">
-      <PageHeading>Create your account</PageHeading>
-      {error && <Alert tone="error">{error}</Alert>}
-      {info && <Alert tone="info">{info}</Alert>}
-      <Field label="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} />
-      <Field label="Password" type="password" value={password} onChange={e => setPassword(e.target.value)} />
-      <Button onClick={handleSignup} disabled={busy} className="mt-2 w-full">
+      <h1 className="mb-6 text-xl font-semibold">Create your account</h1>
+      {error && <div className="mb-4 rounded bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
+      {info && <div className="mb-4 rounded bg-blue-50 px-3 py-2 text-sm text-blue-700">{info}</div>}
+      <label className="mb-1 block text-sm text-gray-600">Email</label>
+      <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+        className="mb-4 w-full rounded border border-gray-300 px-3 py-2" />
+      <label className="mb-1 block text-sm text-gray-600">Password</label>
+      <input type="password" value={password} onChange={e => setPassword(e.target.value)}
+        className="mb-6 w-full rounded border border-gray-300 px-3 py-2" />
+      <button onClick={handleSignup} disabled={busy}
+        className="w-full rounded bg-gray-900 px-4 py-2 text-white hover:bg-gray-700 disabled:opacity-50">
         {busy ? 'Creating…' : 'Sign up'}
-      </Button>
-      <p className="mt-5 text-sm text-muted">
-        Already have an account? <Link to="/login" className="text-petrol underline underline-offset-2">Log in</Link>
+      </button>
+      <p className="mt-4 text-sm text-gray-600">
+        Already have an account? <Link to="/login" className="text-gray-900 underline">Log in</Link>
       </p>
     </div>
   )

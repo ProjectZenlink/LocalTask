@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { WALLET_OPTIONS, TRON_ADDRESS_RE, EVM_ADDRESS_RE, type WalletAddress } from '../types/database'
-import { PageHeading, Button, Alert, Label } from '../components/ui'
 
 export default function Settings() {
   const { user } = useAuth()
@@ -50,21 +49,20 @@ export default function Settings() {
     setSaved(s => ({ ...s, [key]: true }))
   }
 
-  if (!loaded) return <div className="text-muted">Loading…</div>
+  if (!loaded) return <div className="text-gray-500">Loading…</div>
 
   return (
     <div className="mx-auto max-w-lg">
-      <PageHeading sub="Clients pay bounties directly to these addresses. Make sure each one is correct.">
-        Payout addresses
-      </PageHeading>
+      <h1 className="mb-2 text-xl font-semibold">Payout addresses</h1>
+      <p className="mb-6 text-sm text-gray-600">Clients pay bounties directly to these addresses. Make sure each one is correct.</p>
 
-      <Alert tone="warning">
-        USDC on Ethereum and USDC on Base share the same address format but run on different networks. If a client pays on the wrong network, the funds can be lost — you are responsible for entering the correct address for each.
-      </Alert>
+      <div className="mb-6 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+        USDC on Ethereum and USDC on Base share the same address format but run on different networks. If a client pays on the wrong network, the funds can be lost. You are responsible for entering the correct address for each.
+      </div>
 
       {WALLET_OPTIONS.map(opt => (
         <div key={opt.key} className="mb-5">
-          <Label>{opt.label}</Label>
+          <label className="mb-1 block text-sm font-medium text-gray-700">{opt.label}</label>
           <div className="flex gap-2">
             <input
               value={addresses[opt.key] ?? ''}
@@ -74,12 +72,12 @@ export default function Settings() {
                 setSaved(s => ({ ...s, [opt.key]: false }))
               }}
               placeholder={opt.family === 'tron' ? 'T…' : '0x…'}
-              className="flex-1 rounded-lg border border-hair bg-white px-3 py-2.5 font-mono text-sm text-ink placeholder:text-faint focus:border-petrol focus:outline-none focus:ring-2 focus:ring-petrol/20"
-            />
-            <Button variant="ghost" onClick={() => saveOne(opt.key)}>Save</Button>
+              className="flex-1 rounded border border-gray-300 px-3 py-2 font-mono text-sm" />
+            <button onClick={() => saveOne(opt.key)}
+              className="rounded bg-gray-900 px-4 py-2 text-sm text-white hover:bg-gray-700">Save</button>
           </div>
-          {errors[opt.key] && <p className="mt-1.5 text-sm text-danger-text">{errors[opt.key]}</p>}
-          {saved[opt.key] && <p className="mt-1.5 font-mono text-xs uppercase tracking-wider text-verified-text">Saved</p>}
+          {errors[opt.key] && <p className="mt-1 text-sm text-red-600">{errors[opt.key]}</p>}
+          {saved[opt.key] && <p className="mt-1 text-sm text-green-600">Saved.</p>}
         </div>
       ))}
     </div>

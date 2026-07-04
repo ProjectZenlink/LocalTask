@@ -13,26 +13,26 @@ export default function Layout({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen">
-      <header className="border-b border-hair">
-        <div className="mx-auto flex max-w-4xl items-center justify-between px-5 py-4">
-          <Link to="/" className="font-display text-lg font-medium tracking-tight text-ink">LocalTask</Link>
-          <nav className="flex items-center gap-5 text-sm">
+    <div className="min-h-screen bg-gray-50 text-gray-900">
+      <header className="border-b border-gray-200 bg-white">
+        <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-3">
+          <Link to="/" className="text-lg font-semibold">LocalTask</Link>
+          <nav className="flex items-center gap-4 text-sm">
             {session ? (
               <>
-                <Link to="/settings" className="text-muted transition hover:text-ink">Settings</Link>
-                <button onClick={signOut} className="text-muted transition hover:text-ink">Sign out</button>
+                <Link to="/settings" className="text-gray-600 hover:text-gray-900">Settings</Link>
+                <button onClick={signOut} className="text-gray-600 hover:text-gray-900">Sign out</button>
               </>
             ) : (
               <>
-                <Link to="/login" className="text-muted transition hover:text-ink">Log in</Link>
-                <Link to="/signup" className="rounded-lg bg-petrol px-3.5 py-1.5 font-display text-sm font-medium text-paper transition hover:bg-petrol-hover">Sign up</Link>
+                <Link to="/login" className="text-gray-600 hover:text-gray-900">Log in</Link>
+                <Link to="/signup" className="rounded bg-gray-900 px-3 py-1.5 text-white hover:bg-gray-700">Sign up</Link>
               </>
             )}
           </nav>
         </div>
       </header>
-      <main className="mx-auto max-w-4xl px-5 py-10">{children}</main>
+      <main className="mx-auto max-w-4xl px-4 py-8">{children}</main>
     </div>
   )
 }
