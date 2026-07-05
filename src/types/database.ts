@@ -1,7 +1,7 @@
 export type UserRole = 'user' | 'admin'
 export type KycStatus = 'none' | 'pending' | 'verified' | 'rejected'
-export type ChainNetwork = 'tron' | 'ethereum'
-export type TokenSymbol = 'USDT' | 'USDC'
+export type ChainNetwork = 'tron' | 'base' | 'ethereum'
+export type TokenSymbol = 'USDT' | 'USDC' | 'ETH'
 
 export interface Profile {
   id: string
@@ -17,8 +17,6 @@ export interface Profile {
   rating_count: number
   completed_count: number
   is_banned: boolean
-  contact_telegram: string | null
-  contact_whatsapp: string | null
   created_at: string
   updated_at: string
 }
@@ -40,10 +38,12 @@ export interface WalletOption {
   family: 'tron' | 'evm'
 }
 
-// The two supported payout combos (must match the DB check constraints)
+// The four supported payout combos (must match the DB check constraint)
 export const WALLET_OPTIONS: WalletOption[] = [
   { key: 'usdt-trc20', label: 'USDT · TRC20 (Tron)', network: 'tron', token: 'USDT', family: 'tron' },
-  { key: 'usdc-eth', label: 'USDC · Ethereum (ERC20)', network: 'ethereum', token: 'USDC', family: 'evm' },
+  { key: 'usdc-base', label: 'USDC · Base', network: 'base', token: 'USDC', family: 'evm' },
+  { key: 'usdc-eth', label: 'USDC · Ethereum', network: 'ethereum', token: 'USDC', family: 'evm' },
+  { key: 'eth-eth', label: 'ETH · Ethereum', network: 'ethereum', token: 'ETH', family: 'evm' },
 ]
 
 export const TRON_ADDRESS_RE = /^T[1-9A-HJ-NP-Za-km-z]{33}$/
@@ -57,33 +57,3 @@ export const KYC_DOCS: { key: KycDocType; label: string; hint: string }[] = [
   { key: 'address_proof', label: 'Proof of address', hint: 'Bank or utility statement from the last 3 months, showing your name.' },
   { key: 'selfie_handheld', label: 'Selfie holding your ID', hint: 'A clear photo of you holding the same ID beside your face.' },
 ]
-
-export type PackType = 'single' | 'single_pack' | 'full_pack'
-export type TaskStatus = 'draft' | 'open' | 'in_progress' | 'submitted' | 'confirmed' | 'settled' | 'closed' | 'cancelled' | 'disputed'
-
-export interface Task {
-  id: string
-  client_id: string
-  title: string
-  description: string | null
-  pack_type: PackType
-  bounty_total: number
-  // Chosen by the freelancer at accept time; null while the task is open.
-  payout_network: ChainNetwork | null
-  payout_token: TokenSymbol | null
-  payout_address: string | null
-  status: TaskStatus
-  deadline: string | null
-  accepted_by: string | null
-  created_at: string
-}
-
-export function payoutLabel(network: ChainNetwork, token: TokenSymbol): string {
-  const opt = WALLET_OPTIONS.find(o => o.network === network && o.token === token)
-  return opt ? opt.label : `${token} · ${network}`
-}
-
-export function shortAddress(addr: string): string {
-  if (addr.length <= 12) return addr
-  return `${addr.slice(0, 6)}…${addr.slice(-4)}`
-}

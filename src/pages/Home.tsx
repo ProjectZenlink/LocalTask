@@ -38,7 +38,6 @@ export default function Home() {
   if (!loaded) return <div className="text-muted">Loading…</div>
 
   const kyc = profile?.kyc_status ?? 'none'
-  const verified = kyc === 'verified'
   const kycBadge: { status: 'verified' | 'pending' | 'unverified'; label: string } =
     kyc === 'verified' ? { status: 'verified', label: 'Verified' }
     : kyc === 'pending' ? { status: 'pending', label: 'Under review' }
@@ -48,17 +47,6 @@ export default function Home() {
   return (
     <div className="mx-auto max-w-lg">
       <PageHeading>Welcome{profile?.display_name ? `, ${profile.display_name}` : ''}</PageHeading>
-
-      {verified && (
-        <Card className="mb-4 p-5">
-          <Eyebrow>You're verified</Eyebrow>
-          <p className="text-sm text-muted">You can now post tasks and take on work.</p>
-          <div className="mt-4 flex gap-3">
-            <Link to="/tasks" className="flex-1"><Button className="w-full">Browse tasks</Button></Link>
-            <Link to="/post" className="flex-1"><Button variant="ghost" className="w-full">Post a task</Button></Link>
-          </div>
-        </Card>
-      )}
 
       <Card className="p-5">
         <Eyebrow>Get verified</Eyebrow>
@@ -76,11 +64,9 @@ export default function Home() {
         />
       </Card>
 
-      {!verified && (
-        <p className="mt-6 text-sm text-faint">
-          Once your identity is verified, you'll be able to post tasks and take on work.
-        </p>
-      )}
+      <p className="mt-6 text-sm text-faint">
+        Once your identity is verified, you'll be able to post tasks and take on work.
+      </p>
     </div>
   )
 }

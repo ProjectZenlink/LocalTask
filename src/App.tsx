@@ -9,11 +9,6 @@ import BuildProfile from './pages/BuildProfile'
 import OnboardingPhone from './pages/OnboardingPhone'
 import OnboardingKYC from './pages/OnboardingKYC'
 import Settings from './pages/Settings'
-import PostTask from './pages/PostTask'
-import TaskBoard from './pages/TaskBoard'
-import TaskDetail from './pages/TaskDetail'
-import Dashboard from './pages/Dashboard'
-import Admin from './pages/Admin'
 
 export default function App() {
   return (
@@ -27,11 +22,6 @@ export default function App() {
         <Route path="/onboarding/phone" element={<ProtectedRoute><OnboardingPhone /></ProtectedRoute>} />
         <Route path="/onboarding/kyc" element={<ProtectedRoute><OnboardingKYC /></ProtectedRoute>} />
         <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-        <Route path="/post" element={<ProtectedRoute><PostTask /></ProtectedRoute>} />
-        <Route path="/tasks" element={<ProtectedRoute><TaskBoard /></ProtectedRoute>} />
-        <Route path="/tasks/:id" element={<ProtectedRoute><TaskDetail /></ProtectedRoute>} />
-        <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-        <Route path="/admin" element={<ProtectedRoute adminOnly><Admin /></ProtectedRoute>} />
       </Routes>
     </Layout>
   )

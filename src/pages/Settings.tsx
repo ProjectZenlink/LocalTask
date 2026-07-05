@@ -1,23 +1,15 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
-import { useProfile } from '../context/ProfileContext'
 import { WALLET_OPTIONS, TRON_ADDRESS_RE, EVM_ADDRESS_RE, type WalletAddress } from '../types/database'
-import { PageHeading, Button, Alert, Label, Eyebrow } from '../components/ui'
+import { PageHeading, Button, Alert, Label } from '../components/ui'
 
 export default function Settings() {
   const { user } = useAuth()
-  const { profile, refresh } = useProfile()
   const [addresses, setAddresses] = useState<Record<string, string>>({})
   const [saved, setSaved] = useState<Record<string, boolean>>({})
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [loaded, setLoaded] = useState(false)
-
-  const [telegram, setTelegram] = useState('')
-  const [whatsapp, setWhatsapp] = useState('')
-  const [contactSaved, setContactSaved] = useState(false)
-  const [contactError, setContactError] = useState<string | null>(null)
-  const [contactBusy, setContactBusy] = useState(false)
 
   useEffect(() => {
     if (!user) return
@@ -33,12 +25,6 @@ export default function Settings() {
         setLoaded(true)
       })
   }, [user])
-
-  useEffect(() => {
-    if (!profile) return
-    setTelegram(profile.contact_telegram ?? '')
-    setWhatsapp(profile.contact_whatsapp ?? '')
-  }, [profile])
 
   async function saveOne(key: string) {
     const opt = WALLET_OPTIONS.find(o => o.key === key)
@@ -64,36 +50,16 @@ export default function Settings() {
     setSaved(s => ({ ...s, [key]: true }))
   }
 
-  async function saveContact() {
-    if (!user) return
-    setContactError(null)
-    setContactSaved(false)
-    setContactBusy(true)
-    const tg = telegram.trim().replace(/^@/, '')
-    const wa = whatsapp.trim().replace(/[^0-9]/g, '')
-    const { error: err } = await supabase.from('profiles')
-      .update({ contact_telegram: tg || null, contact_whatsapp: wa || null })
-      .eq('id', user.id)
-    setContactBusy(false)
-    if (err) { setContactError(err.message); return }
-    setTelegram(tg)
-    setWhatsapp(wa)
-    setContactSaved(true)
-    await refresh()
-  }
-
   if (!loaded) return <div className="text-muted">Loading…</div>
 
   return (
     <div className="mx-auto max-w-lg">
-      <PageHeading sub="Payout addresses and how the other party can reach you once a task is accepted.">
-        Settings
+      <PageHeading sub="Clients pay bounties directly to these addresses. Make sure each one is correct.">
+        Payout addresses
       </PageHeading>
 
-      <Eyebrow>Payout addresses</Eyebrow>
-
       <Alert tone="warning">
-        USDT must be on TRON (TRC20) and USDC must be on Ethereum (ERC20). Transfers sent on the wrong network can be lost — you are responsible for entering the correct address for each.
+        USDC on Ethereum and USDC on Base share the same address format but run on different networks. If a client pays on the wrong network, the funds can be lost — you are responsible for entering the correct address for each.
       </Alert>
 
       {WALLET_OPTIONS.map(opt => (
@@ -116,37 +82,6 @@ export default function Settings() {
           {saved[opt.key] && <p className="mt-1.5 font-mono text-xs uppercase tracking-wider text-verified-text">Saved</p>}
         </div>
       ))}
-
-      <div className="mt-10 border-t border-hair pt-8">
-        <Eyebrow>Contact · optional</Eyebrow>
-        <p className="mb-4 text-sm leading-relaxed text-muted">
-          Shared only with the other party after a task is accepted — never shown publicly.
-        </p>
-        {contactError && <Alert tone="error">{contactError}</Alert>}
-        <div className="mb-4">
-          <Label>Telegram username (without @)</Label>
-          <input
-            value={telegram}
-            onChange={e => { setTelegram(e.target.value); setContactSaved(false) }}
-            placeholder="your_username"
-            className="w-full rounded-lg border border-hair bg-white px-3 py-2.5 font-mono text-sm text-ink placeholder:text-faint focus:border-petrol focus:outline-none focus:ring-2 focus:ring-petrol/20"
-          />
-        </div>
-        <div className="mb-4">
-          <Label>WhatsApp number (with country code, digits only)</Label>
-          <input
-            value={whatsapp}
-            onChange={e => { setWhatsapp(e.target.value.replace(/[^0-9+ ]/g, '')); setContactSaved(false) }}
-            inputMode="tel"
-            placeholder="15551234567"
-            className="w-full rounded-lg border border-hair bg-white px-3 py-2.5 font-mono text-sm text-ink placeholder:text-faint focus:border-petrol focus:outline-none focus:ring-2 focus:ring-petrol/20"
-          />
-        </div>
-        <div className="flex items-center gap-3">
-          <Button onClick={saveContact} disabled={contactBusy}>{contactBusy ? 'Saving…' : 'Save contact'}</Button>
-          {contactSaved && <span className="font-mono text-xs uppercase tracking-wider text-verified-text">Saved</span>}
-        </div>
-      </div>
     </div>
   )
 }

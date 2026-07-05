@@ -1,16 +1,11 @@
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { useProfile } from '../context/ProfileContext'
 import { supabase } from '../lib/supabase'
-import FloatingSupport from './FloatingSupport'
 
 export default function Layout({ children }: { children: ReactNode }) {
   const { session } = useAuth()
-  const { profile } = useProfile()
   const navigate = useNavigate()
-  const { pathname } = useLocation()
-  const isAdminPage = pathname.startsWith('/admin')
 
   async function signOut() {
     await supabase.auth.signOut()
@@ -25,11 +20,6 @@ export default function Layout({ children }: { children: ReactNode }) {
           <nav className="flex items-center gap-5 text-sm">
             {session ? (
               <>
-                <Link to="/tasks" className="text-muted transition hover:text-ink">Tasks</Link>
-                <Link to="/dashboard" className="text-muted transition hover:text-ink">Dashboard</Link>
-                {profile?.role === 'admin' && (
-                  <Link to="/admin" className="font-mono text-xs uppercase tracking-wider text-petrol transition hover:text-petrol-hover">Admin</Link>
-                )}
                 <Link to="/settings" className="text-muted transition hover:text-ink">Settings</Link>
                 <button onClick={signOut} className="text-muted transition hover:text-ink">Sign out</button>
               </>
@@ -43,7 +33,6 @@ export default function Layout({ children }: { children: ReactNode }) {
         </div>
       </header>
       <main className="mx-auto max-w-4xl px-5 py-10">{children}</main>
-      {!isAdminPage && <FloatingSupport />}
     </div>
   )
 }
