@@ -280,13 +280,3 @@ export interface Rating {
   note: string | null
   created_at: string
 }
-
-/** kyc_risk_scan RPC 返回行 */
-export interface ScanFinding {
-  severity: 'red' | 'amber'
-  flag: 'identity_exact' | 'dob_ssn4' | 'id_doc' | 'contact' | 'payout' | 'blacklist'
-  matched_user: string | null
-  matched_name: string | null
-  matched_banned: boolean
-  detail: string | null
-}

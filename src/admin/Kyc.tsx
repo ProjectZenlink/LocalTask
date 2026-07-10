@@ -5,7 +5,6 @@ import { useAuth } from '../context/AuthContext'
 import { PageHeading, Card, Button, Alert } from '../components/ui'
 import { signFiles } from '../lib/format'
 import { PromptDialog } from './bits'
-import RiskFlags from '../components/RiskFlags'
 import { useLang } from './i18n'
 
 interface PendingSub {
@@ -148,9 +147,6 @@ export default function AdminKyc() {
                     <Button variant="ghost" onClick={() => openSub(sub)}>{t.review}</Button>
                   )}
                 </div>
-              </div>
-              <div className="mt-3">
-                <RiskFlags userId={sub.user_id} lang={lang} linkBase="/admin/pool" />
               </div>
               {open === sub.id && (
                 <div className="mt-4 grid grid-cols-2 gap-3 border-t border-hair pt-4">

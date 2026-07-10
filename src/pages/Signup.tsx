@@ -17,12 +17,6 @@ export default function Signup() {
     if (!email || !password) { setError('Enter your email and a password.'); return }
     if (password.length < 8) { setError('Password must be at least 8 characters.'); return }
     setBusy(true)
-    const { data: okDomain } = await supabase.rpc('email_domain_allowed', { p_email: email })
-    if (okDomain === false) {
-      setBusy(false)
-      setError('Disposable email addresses are not allowed. Please sign up with a real inbox you control.')
-      return
-    }
     const { data, error: err } = await supabase.auth.signUp({ email, password })
     setBusy(false)
     if (err) { setError(err.message); return }

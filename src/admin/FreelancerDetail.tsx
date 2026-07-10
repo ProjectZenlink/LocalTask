@@ -7,7 +7,6 @@ import { payoutLabel } from '../types/database'
 import { dateShort, dateTimeShort, waLink, tgLink, xLink, signFiles, safeFileName, fileNameFromPath, isImagePath } from '../lib/format'
 import { PageHeading, Card, Button, Alert, StatusBadge, SectionTitle, Field, Label } from '../components/ui'
 import SecretText from '../components/SecretText'
-import RiskFlags from '../components/RiskFlags'
 import { KV, ConfirmDialog } from './bits'
 import { useLang } from './i18n'
 
@@ -27,7 +26,7 @@ const COPY = {
     back: '← 人才库', notFound: '未找到该 freelancer',
     basics: '基本资料', legal: '法定姓名', dob: '出生日期', addr: '地址', ssn: 'SSN', joined: '注册',
     ssnShow: '显示完整', ssnHide: '隐藏',
-    contact: '联系方式', wallet: '收款钱包', noWallet: '未设置', riskT: '风险扫描(全库比对)',
+    contact: '联系方式', wallet: '收款钱包', noWallet: '未设置',
     load: '负载与评分', active: '活跃任务', done: '已完成', qsa: '质 / 速 / 态(均分)', strikes: 'Strikes',
     companies: '公司资料', coEmpty: '没有登记的公司。', addCo: '＋ 添加公司',
     coName: '公司名称(必填)', ein: 'EIN', coState: '注册州', coNotes: '备注',
@@ -47,7 +46,7 @@ const COPY = {
     back: '← Pool', notFound: 'Freelancer not found',
     basics: 'Basics', legal: 'Legal name', dob: 'Date of birth', addr: 'Address', ssn: 'SSN', joined: 'Joined',
     ssnShow: 'Show full', ssnHide: 'Hide',
-    contact: 'Contact', wallet: 'Payout wallet', noWallet: 'Not set', riskT: 'Risk scan (whole-DB)',
+    contact: 'Contact', wallet: 'Payout wallet', noWallet: 'Not set',
     load: 'Load & ratings', active: 'Active tasks', done: 'Completed', qsa: 'Q / S / A (avg)', strikes: 'Strikes',
     companies: 'Companies', coEmpty: 'No companies on file.', addCo: '＋ Add company',
     coName: 'Company name (required)', ein: 'EIN', coState: 'State of incorporation', coNotes: 'Notes',
@@ -387,11 +386,6 @@ export default function FreelancerDetail({ amScope = null }: { amScope?: Account
             </span>
           </KV>
         )}
-      </Card>
-
-      <Card className="mb-5 p-5">
-        <SectionTitle>{t.riskT}</SectionTitle>
-        <RiskFlags userId={p.id} lang={lang} linkBase={amScope ? '/am/pool' : '/admin/pool'} />
       </Card>
 
       {/* 公司资料 */}
