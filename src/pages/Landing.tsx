@@ -1,0 +1,369 @@
+import { useEffect, useMemo, useState } from 'react'
+import { Link, Navigate } from 'react-router-dom'
+import { ArrowRight, Plus, Minus } from 'lucide-react'
+import { useAuth } from '../context/AuthContext'
+import { SUPPORT } from '../lib/support'
+import { Rv } from '../lib/useReveal'
+import TaskCardDemo from '../components/TaskCardDemo'
+import SupportDock from '../components/SupportDock'
+
+/** 公开落地页 v4(封版稿)。
+ *  纪律:一种强调色 / 两款字体两级字阶 / 零图库照片 /
+ *  动效预算 = 任务卡主秀 + 流程时间轴 + 滚动显现与悬停,再无其他。
+ *  每一节配一件视觉主角:任务卡 → 台账 → 时间轴 → 墨绿面板 → 徽章 → 对话卡。 */
+
+const FAQ: { q: string; a: string }[] = [
+  { q: 'Is this a job?', a: 'No — independent contractor, task by task. No shifts, no quotas. Decline anything you don\'t like.' },
+  { q: 'What exactly will I be doing?', a: 'Structured tasks scoped by your manager. Every offer shows the steps, the criteria and the amount — before you accept.' },
+  { q: 'Why are stablecoins a payout option?', a: 'Cross-border businesses settle fastest with stablecoins. Prefer PayPal? Also fine. Your choice, always.' },
+  { q: 'What if something goes wrong mid-task?', a: 'Message your manager directly — a named person, not a ticket queue. Tasks can be returned, fixed and resubmitted.' },
+  { q: 'Who sees my documents?', a: 'Platform admins only, encrypted — never clients, never other freelancers.' },
+  { q: 'Does it cost anything?', a: 'Never. No fees, no deposits, no kits. Anyone asking you for money is not us.' },
+]
+
+function FaqList() {
+  const [open, setOpen] = useState<number | null>(0)
+  return (
+    <div className="mt-10">
+      {FAQ.map((f, i) => (
+        <Rv key={f.q} delay={i * 40} className="border-b border-hair first:border-t">
+          <button
+            onClick={() => setOpen(open === i ? null : i)}
+            className="flex w-full items-center justify-between gap-4 py-5 text-left"
+          >
+            <span className="font-display text-[16px] font-medium tracking-tight">{f.q}</span>
+            <span className="shrink-0 text-faint">
+              {open === i ? <Minus size={16} strokeWidth={1.75} /> : <Plus size={16} strokeWidth={1.75} />}
+            </span>
+          </button>
+          {open === i && <p className="ld-fade -mt-1 pb-5 pr-8 text-sm leading-relaxed text-muted">{f.a}</p>}
+        </Rv>
+      ))}
+    </div>
+  )
+}
+
+/** 流程时间轴:进度线自动推进循环;桌面横轨、移动竖轨;用户一旦点击,自动播放让位。 */
+const STEPS4: [string, string, string][] = [
+  ['01', 'Apply & verify', 'Ten minutes. It keeps everyone here real.'],
+  ['02', 'Meet your manager', 'A named person on WhatsApp or Telegram, day one.'],
+  ['03', 'Work the task', 'Accept what you like, follow the steps, submit.'],
+  ['04', 'Confirm the pay', 'We pay. You confirm. Only then does it close.'],
+]
+
+function Steps() {
+  const reduced = useMemo(
+    () => typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+    [],
+  )
+  const [act, setAct] = useState(reduced ? 3 : 0)
+  const [manual, setManual] = useState(false)
+
+  useEffect(() => {
+    if (reduced || manual) return
+    const id = setTimeout(() => setAct(a => (a + 1) % 4), 2600)
+    return () => clearTimeout(id)
+  }, [act, reduced, manual])
+
+  return (
+    <div className="relative mt-12">
+      {/* 桌面横轨 */}
+      <div className="absolute left-0 right-0 top-[15px] hidden h-px bg-hair md:block" />
+      <div
+        className="absolute left-0 top-[15px] hidden h-px bg-petrol md:block"
+        style={{ width: `${(act / 3) * 100}%`, transition: 'width .7s var(--ease-ld)' }}
+      />
+      {/* 移动竖轨 */}
+      <div className="absolute bottom-4 left-[14px] top-2 w-px bg-hair md:hidden" />
+      <div
+        className="absolute left-[14px] top-2 w-px bg-petrol md:hidden"
+        style={{ height: `${(act / 3) * 88}%`, transition: 'height .7s var(--ease-ld)' }}
+      />
+      <div className="grid gap-9 md:grid-cols-4 md:gap-6">
+        {STEPS4.map(([n, h, b], i) => (
+          <button
+            key={n}
+            type="button"
+            onClick={() => { setManual(true); setAct(i) }}
+            className="relative pl-12 text-left md:pl-0"
+          >
+            <p className={`absolute left-0 top-0 bg-surface pb-1 font-mono text-2xl font-bold transition-colors duration-500 md:static md:inline-block md:pb-0 md:pr-3 ${i <= act ? 'text-petrol' : 'text-faint'}`}>
+              {n}
+            </p>
+            <p className={`font-display text-[17px] font-medium tracking-tight transition-colors duration-500 md:mt-2.5 ${i === act ? 'text-ink' : 'text-muted'}`}>
+              {h}
+            </p>
+            <p className="mt-1.5 text-sm leading-relaxed text-muted">{b}</p>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+export default function Landing() {
+  const { session, loading } = useAuth()
+  if (!loading && session) return <Navigate to="/offers" replace />
+
+  return (
+    <div className="min-h-screen bg-paper text-ink">
+      {/* ============ 页头:吸顶毛玻璃 ============ */}
+      <header className="sticky top-0 z-30 border-b border-hair bg-paper/85 backdrop-blur">
+        <div className="mx-auto flex max-w-5xl items-center justify-between px-5 py-4">
+          <Link to="/" className="flex items-center gap-2.5 font-display text-lg font-medium tracking-tight">
+            <img src="/logo.svg" alt="" className="h-6 w-6 rounded-md" />
+            LocalTask
+          </Link>
+          <Link to="/login" className="rounded-lg border border-hair px-4 py-2 text-sm text-ink transition hover:border-petrol/40">
+            Sign in
+          </Link>
+        </div>
+      </header>
+
+      {/* ============ Hero:开幕编排 ============ */}
+      <section className="relative overflow-hidden">
+        <div aria-hidden className="pointer-events-none absolute -top-48 right-[-12%] h-[520px] w-[520px] rounded-full bg-petrol/[0.05] blur-3xl" />
+        <div className="mx-auto max-w-5xl px-5 pb-20 pt-16 sm:pt-24">
+          <div className="grid items-center gap-14 lg:grid-cols-2">
+            <div>
+              <p className="ld-fade font-mono text-[11px] uppercase tracking-[0.28em] text-petrol">
+                For US-based freelancers
+              </p>
+              <h1 className="t-hero mt-5 font-display font-medium">
+                <span className="ld-fade block" style={{ animationDelay: '90ms' }}>Task-based work,</span>
+                <span className="ld-fade block text-petrol" style={{ animationDelay: '180ms' }}>done properly.</span>
+              </h1>
+              <p className="ld-fade mt-6 max-w-md text-base leading-relaxed text-muted" style={{ animationDelay: '280ms' }}>
+                Structured tasks from vetted cross-border businesses. Priced in USD — closed only
+                after <span className="font-medium text-petrol">you confirm the money arrived</span>.
+              </p>
+              <div className="ld-fade mt-8" style={{ animationDelay: '380ms' }}>
+                <Link
+                  to="/signup"
+                  className="group inline-flex items-center gap-2 rounded-xl bg-petrol px-7 py-3.5 font-display text-[15px] font-medium text-paper shadow-[0_10px_28px_rgba(36,75,77,0.28)] transition hover:-translate-y-px hover:bg-petrol-hover"
+                >
+                  Apply now
+                  <ArrowRight size={16} strokeWidth={2} className="transition-transform duration-300 group-hover:translate-x-0.5" />
+                </Link>
+              </div>
+              <p className="ld-fade mt-5 font-mono text-[11px] uppercase tracking-[0.18em] text-faint" style={{ animationDelay: '470ms' }}>
+                No fees. No deposits. Ever.
+              </p>
+            </div>
+
+            <div className="ld-rise" style={{ animationDelay: '260ms' }}>
+              <TaskCardDemo />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ============ 01 工作长什么样:台账卡 ============ */}
+      <section className="relative overflow-hidden border-t border-hair">
+        <span aria-hidden className="pointer-events-none absolute -top-4 right-2 select-none font-mono text-[8rem] font-bold leading-none text-petrol/[0.05] sm:text-[12rem]">01</span>
+        <div className="mx-auto max-w-5xl px-5 py-20">
+          <Rv as="p" className="font-mono text-[11px] uppercase tracking-[0.28em] text-faint">01 — The work</Rv>
+          <Rv as="h2" delay={60} className="t-h2 mt-4 max-w-xl font-display font-medium">
+            Discrete, structured tasks.
+          </Rv>
+          <Rv as="p" delay={120} className="mt-4 max-w-lg text-base leading-relaxed text-muted">
+            Every offer shows the steps, the criteria and the exact amount — before you accept.
+          </Rv>
+          <Rv delay={180} className="mt-10 max-w-2xl rounded-2xl border border-hair bg-surface">
+            {[
+              ['Fixed scope', 'You always know what “done” means.'],
+              ['Fixed price', 'The amount is on the offer. It doesn\'t move.'],
+              ['One at a time', 'Steady, reviewable work — built for the long run.'],
+            ].map(([h, b]) => (
+              <div key={h} className="flex flex-col gap-1 border-b border-hair px-6 py-5 last:border-b-0 sm:flex-row sm:items-baseline sm:gap-8">
+                <p className="w-36 shrink-0 font-mono text-[11px] uppercase tracking-[0.2em] text-petrol">{h}</p>
+                <p className="text-sm leading-relaxed text-muted">{b}</p>
+              </div>
+            ))}
+          </Rv>
+        </div>
+      </section>
+
+      {/* ============ 02 流程:活的时间轴 ============ */}
+      <section className="relative overflow-hidden border-y border-hair bg-surface">
+        <span aria-hidden className="pointer-events-none absolute -top-4 right-2 select-none font-mono text-[8rem] font-bold leading-none text-petrol/[0.05] sm:text-[12rem]">02</span>
+        <div className="mx-auto max-w-5xl px-5 py-20">
+          <Rv as="p" className="font-mono text-[11px] uppercase tracking-[0.28em] text-faint">02 — How it works</Rv>
+          <Rv as="h2" delay={60} className="t-h2 mt-4 font-display font-medium">
+            Four steps. The fourth is yours.
+          </Rv>
+          <Rv delay={120}>
+            <Steps />
+          </Rv>
+        </div>
+      </section>
+
+      {/* ============ 03 钱:墨绿面板 ============ */}
+      <section className="relative overflow-hidden">
+        <span aria-hidden className="pointer-events-none absolute -top-4 right-2 select-none font-mono text-[8rem] font-bold leading-none text-petrol/[0.05] sm:text-[12rem]">03</span>
+        <div className="mx-auto max-w-5xl px-5 py-28 sm:py-32">
+        <Rv as="p" className="font-mono text-[11px] uppercase tracking-[0.28em] text-faint">03 — The money</Rv>
+        <Rv as="h2" delay={60} className="t-h2 mt-4 font-display font-medium">
+          Paid ≠ done. <span className="text-petrol">Done = you confirmed.</span>
+        </Rv>
+        <Rv delay={140} className="mt-10 rounded-2xl bg-petrol p-8 shadow-[0_20px_56px_rgba(36,75,77,0.32)] sm:p-10">
+          <div className="grid gap-8 sm:grid-cols-3">
+            <div>
+              <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-paper/60">Priced in USD</p>
+              <p className="mt-2 text-sm leading-relaxed text-paper">The exact amount is on every offer.</p>
+            </div>
+            <div>
+              <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-paper/60">Paid your way</p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {['USDT', 'USDC', 'PayPal'].map(m => (
+                  <span key={m} className="rounded-full border border-paper/30 px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider text-paper">
+                    {m}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-paper/60">Closed by you</p>
+              <p className="mt-2 text-sm leading-relaxed text-paper">Nothing closes until you confirm it arrived.</p>
+            </div>
+          </div>
+          <div className="mt-8 border-t border-paper/20 pt-6">
+            <p className="font-display text-xl font-medium tracking-tight text-paper sm:text-2xl">
+              We never ask you for money. <span className="text-paper/70">No fees, no deposits, no kits — anyone who asks is not us.</span>
+            </p>
+          </div>
+        </Rv>
+        </div>
+      </section>
+
+      {/* ============ 04 验证:一句话 + 徽章 ============ */}
+      <section className="relative overflow-hidden border-y border-hair bg-surface">
+        <span aria-hidden className="pointer-events-none absolute -top-4 right-2 select-none font-mono text-[8rem] font-bold leading-none text-petrol/[0.05] sm:text-[12rem]">04</span>
+        <div className="mx-auto max-w-5xl px-5 py-20">
+          <Rv as="p" className="font-mono text-[11px] uppercase tracking-[0.28em] text-faint">04 — Verification</Rv>
+          <Rv as="h2" delay={60} className="t-h2 mt-4 max-w-xl font-display font-medium">
+            Verified, properly.
+          </Rv>
+          <Rv as="p" delay={120} className="mt-4 max-w-lg text-base leading-relaxed text-muted">
+            Everyone here — freelancer and business — is identity-verified. That's why the tasks
+            are real and the pay is real.
+          </Rv>
+          <Rv delay={180} className="mt-8 flex flex-wrap gap-2">
+            {['Encrypted documents', 'Valid government ID', 'SSN identity check', '18+ · US-based'].map(c => (
+              <span key={c} className="rounded-full border border-hair bg-paper px-3.5 py-1.5 font-mono text-[11px] uppercase tracking-wider text-ink-soft">
+                {c}
+              </span>
+            ))}
+          </Rv>
+        </div>
+      </section>
+
+      {/* ============ 05 账户经理:对话卡 ============ */}
+      <section className="relative overflow-hidden">
+        <span aria-hidden className="pointer-events-none absolute -top-4 right-2 select-none font-mono text-[8rem] font-bold leading-none text-petrol/[0.05] sm:text-[12rem]">05</span>
+        <div className="mx-auto max-w-5xl px-5 py-24">
+        <div className="grid items-center gap-12 lg:grid-cols-2">
+          <div>
+            <Rv as="p" className="font-mono text-[11px] uppercase tracking-[0.28em] text-faint">05 — Your manager</Rv>
+            <Rv as="h2" delay={60} className="t-h2 mt-4 max-w-xl font-display font-medium">
+              A person, not a portal.
+            </Rv>
+            <Rv as="p" delay={120} className="mt-4 max-w-lg text-base leading-relaxed text-muted">
+              From day one you have a named account manager on WhatsApp or Telegram. They scope
+              your tasks, answer the awkward questions, and stay for the long run.
+            </Rv>
+          </div>
+          <Rv delay={160} className="max-w-md rounded-2xl border border-hair bg-surface p-5 lg:justify-self-end">
+            <div className="flex items-center gap-3 border-b border-hair pb-4">
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-petrol font-display text-xs font-medium text-paper">
+                SW
+              </span>
+              <div>
+                <p className="font-display text-sm font-medium tracking-tight">Sarah W.</p>
+                <p className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-faint">
+                  <span className="h-1.5 w-1.5 rounded-full bg-verified" />
+                  Account manager
+                </p>
+              </div>
+            </div>
+            <div className="mt-4 flex flex-col gap-2.5">
+              <p className="self-end rounded-2xl rounded-tr-md bg-petrol px-3.5 py-2.5 text-[13px] leading-relaxed text-paper">
+                Quick one — the offer says 4 criteria, where do I see them?
+              </p>
+              <p className="self-start rounded-2xl rounded-tl-md border border-hair bg-paper px-3.5 py-2.5 text-[13px] leading-relaxed text-ink-soft">
+                Open the task → scope section, all four are listed. Ping me anytime — I'm here.
+              </p>
+              <p className="self-start font-mono text-[10px] uppercase tracking-wider text-faint">Replied in 2 min</p>
+            </div>
+          </Rv>
+        </div>
+        </div>
+      </section>
+
+      {/* ============ FAQ ============ */}
+      <section className="border-t border-hair bg-surface">
+        <div className="mx-auto max-w-3xl px-5 py-16">
+          <Rv as="p" className="text-center font-mono text-[11px] uppercase tracking-[0.28em] text-faint">
+            Straight answers
+          </Rv>
+          <Rv as="h2" delay={60} className="t-h2 mt-4 text-center font-display font-medium">
+            The questions you should be asking.
+          </Rv>
+          <FaqList />
+        </div>
+      </section>
+
+      {/* ============ 尾部 CTA ============ */}
+      <section className="mx-auto max-w-5xl px-5 py-20 text-center">
+        <Rv as="h2" className="t-h2 font-display font-medium">
+          Read the rules. Then decide.
+        </Rv>
+        <Rv as="p" delay={70} className="mx-auto mt-4 max-w-md text-base leading-relaxed text-muted">
+          Applying takes about ten minutes.
+        </Rv>
+        <Rv delay={140} className="mt-7">
+          <Link
+            to="/signup"
+            className="group inline-flex items-center gap-2 rounded-xl bg-petrol px-8 py-4 font-display text-[15px] font-medium text-paper shadow-[0_10px_28px_rgba(36,75,77,0.28)] transition hover:-translate-y-px hover:bg-petrol-hover"
+          >
+            Apply now
+            <ArrowRight size={16} strokeWidth={2} className="transition-transform duration-300 group-hover:translate-x-0.5" />
+          </Link>
+        </Rv>
+        <Rv as="p" delay={210} className="mt-5 font-mono text-[11px] uppercase tracking-[0.18em] text-faint">
+          No fees. No deposits. Ever.
+        </Rv>
+      </section>
+
+      {/* ============ 页脚 ============ */}
+      <footer className="border-t border-hair">
+        <div className="mx-auto max-w-5xl px-5 py-10 pb-28 sm:pb-10">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <p className="flex items-center gap-2 font-display text-sm font-medium tracking-tight">
+              <img src="/logo.svg" alt="" className="h-5 w-5 rounded" />
+              LocalTask
+            </p>
+            <nav className="flex flex-wrap items-center gap-x-6 gap-y-2 font-mono text-[11px] uppercase tracking-[0.16em] text-muted">
+              <Link to="/terms" className="transition hover:text-ink">Terms</Link>
+              <Link to="/privacy" className="transition hover:text-ink">Privacy</Link>
+              {SUPPORT.whatsapp && (
+                <a href={`https://wa.me/${SUPPORT.whatsapp}`} target="_blank" rel="noreferrer" className="transition hover:text-ink">
+                  WhatsApp
+                </a>
+              )}
+              <a href={`https://t.me/${SUPPORT.telegram}`} target="_blank" rel="noreferrer" className="transition hover:text-ink">
+                Telegram
+              </a>
+            </nav>
+          </div>
+          <p className="mt-6 font-mono text-[11px] leading-relaxed text-faint">
+            Questions before applying? Message us — a person answers.
+            <br />© 2026 LocalTask · Operated by Local Group
+          </p>
+        </div>
+      </footer>
+
+      <SupportDock />
+    </div>
+  )
+}
