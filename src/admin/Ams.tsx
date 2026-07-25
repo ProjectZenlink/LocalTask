@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { SITE_URL } from '../lib/site'
 import { useAuth } from '../context/AuthContext'
 import type { AccountManager, CommissionRate, PendingStaff } from '../types/database'
 import { TASK_TYPES } from '../types/database'
@@ -78,7 +77,7 @@ export default function AdminAms() {
   const [copied, setCopied] = useState(false)
   const [adminFor, setAdminFor] = useState<PendingStaff | null>(null)
   const [rejectFor, setRejectFor] = useState<PendingStaff | null>(null)
-  const joinUrl = `${SITE_URL}/staff/join`
+  const joinUrl = `${window.location.origin}/staff/join`
 
   const load = useCallback(async () => {
     const { data, error: e } = await supabase.from('account_managers').select('*').order('created_at', { ascending: false })

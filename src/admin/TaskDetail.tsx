@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { SITE_URL } from '../lib/site'
 import SecretText from '../components/SecretText'
 import { useAuth } from '../context/AuthContext'
 import type { Task, TaskOffer, TaskSubmission, Rating, PoolRow, AccountManager } from '../types/database'
@@ -217,7 +216,7 @@ export default function AdminTaskDetail({ amScope = null }: { amScope?: AccountM
 
   async function copyShare() {
     try {
-      await navigator.clipboard.writeText(`${SITE_URL}/share/${task!.share_token}`)
+      await navigator.clipboard.writeText(`${window.location.origin}/share/${task!.share_token}`)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch { /* 剪贴板不可用时静默 */ }
