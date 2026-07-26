@@ -2,9 +2,9 @@ import { useCallback, useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
-import type { Profile, PoolRow, FreelancerCompany, AccountManager, AccountRecord, BonusGrant } from '../types/database'
+import type { Profile, PoolRow, Rating, FreelancerCompany, AccountManager, AccountRecord, BonusGrant } from '../types/database'
 import { payoutLabel } from '../types/database'
-import { usd, dateShort, dateTimeShort, waLink, tgLink, xLink, signFiles, safeFileName, fileNameFromPath, isImagePath, openSigned, bjDay } from '../lib/format'
+import { usd, dateShort, dateTimeShort, waLink, tgLink, xLink, signFiles, safeFileName, fileNameFromPath, isImagePath, openSigned } from '../lib/format'
 import { PageHeading, Card, Button, Alert, StatusBadge, SectionTitle, Field, Label, Input } from '../components/ui'
 import SecretText from '../components/SecretText'
 import RiskFlags from '../components/RiskFlags'
@@ -20,6 +20,8 @@ interface KycSub {
   reviewed_at: string | null
 }
 type Signed = { path: string; url: string }
+interface RatingRow extends Rating { task: { title: string } | null }
+interface StrikeRow { id: string; reason: string; created_at: string; task: { title: string } | null }
 
 const COPY = {
   zh: {
@@ -33,7 +35,7 @@ const COPY = {
     bTxRef: '打款凭证号(可选)', bMark: '标记已打款', bMarked: '已记录 ✓', bPaidAt: '打款时间',
     ssnShow: '显示完整', ssnHide: '隐藏',
     contact: '联系方式', wallet: '收款钱包', noWallet: '未设置', riskT: '风险扫描(全库比对)',
-    load: '负载', active: '活跃任务', done: '已完成',
+    load: '负载与评分', active: '活跃任务', done: '已完成', qsa: '质 / 速 / 态(均分)', strikes: 'Strikes',
     companies: '公司资料', coEmpty: '没有登记的公司。', addCo: '＋ 添加公司',
     coName: '公司名称(必填)', ein: 'EIN', coState: '注册州', coNotes: '备注',
     coDocs: '公司文件(EIN 信函、Certificate of Incorporation 等,可多选追加)',
@@ -42,8 +44,8 @@ const COPY = {
     viewDocs: '查看文件', hideDocs: '收起', loadingDocs: '加载中…', docsCount: '份文件',
     owner: '归属 AM', ownerNone: '— 未归属 —', rejectedK: '驳回状态', rejectedBadge: '已被驳回', restore: '恢复', recordsT: '账号资料(由归属 AM 维护)', recEmpty: '暂无账号资料。', kyc: 'KYC 材料', kycEmpty: '没有提交记录。', submitted: '提交于', reviewed: '审核于', reason: '驳回原因:',
     viewKyc: '查看材料',
-    
-   
+    ratings: '评分历史', ratingsEmpty: '还没有评分。',
+    strikesT: 'Strike 记录', strikesEmpty: '没有 strike。',
     pause: '暂停', resume: '恢复', block: '封禁', unblock: '解封', claim: '认领到我名下', boardLink: '清单',
     paused: '已暂停', blocked: '已封禁', open: '开着接单', closed: '未开接单',
     blockQ: '封禁是给欺诈用的,可靠性问题请用「暂停」。确认永久封禁?', confirmBlock: '确认封禁', dlgCancel: '取消',
@@ -59,7 +61,7 @@ const COPY = {
     bTxRef: 'Payment reference (optional)', bMark: 'Mark as paid', bMarked: 'Recorded ✓', bPaidAt: 'Paid at',
     ssnShow: 'Show full', ssnHide: 'Hide',
     contact: 'Contact', wallet: 'Payout wallet', noWallet: 'Not set', riskT: 'Risk scan (whole-DB)',
-    load: 'Load', active: 'Active tasks', done: 'Completed',
+    load: 'Load & ratings', active: 'Active tasks', done: 'Completed', qsa: 'Q / S / A (avg)', strikes: 'Strikes',
     companies: 'Companies', coEmpty: 'No companies on file.', addCo: '＋ Add company',
     coName: 'Company name (required)', ein: 'EIN', coState: 'State of incorporation', coNotes: 'Notes',
     coDocs: 'Company documents (EIN letter, Certificate of Incorporation… multiple, appended)',
@@ -68,8 +70,8 @@ const COPY = {
     viewDocs: 'View files', hideDocs: 'Hide', loadingDocs: 'Loading…', docsCount: 'file(s)',
     owner: 'Owner AM', ownerNone: '— Unassigned —', rejectedK: 'Rejection', rejectedBadge: 'Rejected', restore: 'Restore', recordsT: 'Account records (maintained by owner AM)', recEmpty: 'No account records.', kyc: 'KYC documents', kycEmpty: 'No submissions.', submitted: 'Submitted', reviewed: 'Reviewed', reason: 'Rejection:',
     viewKyc: 'View documents',
-    
-   
+    ratings: 'Rating history', ratingsEmpty: 'No ratings yet.',
+    strikesT: 'Strikes', strikesEmpty: 'No strikes.',
     pause: 'Pause', resume: 'Resume', block: 'Block', unblock: 'Unblock', claim: 'Claim', boardLink: 'Checklist',
     paused: 'Paused', blocked: 'Blocked',
     blockQ: 'Blocking is for fraud — use Pause for reliability issues. Block permanently?', confirmBlock: 'Block', dlgCancel: 'Cancel',
@@ -124,7 +126,7 @@ export default function FreelancerDetail({ amScope = null }: { amScope?: Account
   const [gBusy, setGBusy] = useState<string | null>(null)
   const [ciState, setCiState] = useState<'none' | 'pending' | 'confirmed'>('none')
   const [ciBusy, setCiBusy] = useState(false)
-  const bjToday = bjDay()
+  const bjToday = new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10)
 
   async function saveWork() {
     if (!p) return
@@ -169,6 +171,8 @@ export default function FreelancerDetail({ amScope = null }: { amScope?: Account
     await load()
   }
   const [subs, setSubs] = useState<KycSub[]>([])
+  const [ratings, setRatings] = useState<RatingRow[]>([])
+  const [strikes, setStrikes] = useState<StrikeRow[]>([])
   const [companies, setCompanies] = useState<FreelancerCompany[]>([])
   const [ams, setAms] = useState<AccountManager[]>([])
   const [records, setRecords] = useState<AccountRecord[]>([])
@@ -191,12 +195,16 @@ export default function FreelancerDetail({ amScope = null }: { amScope?: Account
 
   const load = useCallback(async () => {
     if (!id) return
-    const [pr, po, ss, ks, co, amls, recs] = await Promise.all([
+    const [pr, po, ss, ks, rt, st, co, amls, recs] = await Promise.all([
       supabase.from('profiles').select('*').eq('id', id).maybeSingle(),
       supabase.from('freelancer_pool').select('*').eq('id', id).maybeSingle(),
       supabase.from('kyc_ssn').select('ssn_full, ssn_last4').eq('user_id', id).maybeSingle(),
       supabase.from('kyc_submissions').select('id, status, rejection_reason, created_at, reviewed_at')
         .eq('user_id', id).order('created_at', { ascending: false }),
+      supabase.from('ratings').select('*, task:tasks(title)').eq('freelancer_id', id)
+        .order('created_at', { ascending: false }),
+      supabase.from('strikes').select('id, reason, created_at, task:tasks(title)').eq('freelancer_id', id)
+        .order('created_at', { ascending: false }),
       supabase.from('freelancer_companies').select('*').eq('freelancer_id', id)
         .order('created_at', { ascending: false }),
       supabase.from('account_managers').select('*').order('name'),
@@ -217,6 +225,8 @@ export default function FreelancerDetail({ amScope = null }: { amScope?: Account
     const { data: ciRow } = await supabase.from('checkins').select('confirmed_at')
       .eq('user_id', id).eq('day', bjToday).maybeSingle()
     setCiState(!ciRow ? 'none' : (ciRow as { confirmed_at: string | null }).confirmed_at ? 'confirmed' : 'pending')
+    setRatings((rt.data ?? []) as unknown as RatingRow[])
+    setStrikes((st.data ?? []) as unknown as StrikeRow[])
     setCompanies((co.data ?? []) as FreelancerCompany[])
     setAms((amls.data ?? []) as AccountManager[])
     setRecords((recs.data ?? []) as AccountRecord[])
@@ -614,6 +624,8 @@ export default function FreelancerDetail({ amScope = null }: { amScope?: Account
           <SectionTitle>{t.load}</SectionTitle>
           <KV k={t.active}><span className="font-mono">{pool?.active_tasks ?? 0}</span></KV>
           <KV k={t.done}><span className="font-mono">{pool?.completed_tasks ?? 0}</span></KV>
+          <KV k={t.qsa}><span className="font-mono">{pool?.avg_quality ?? '–'} / {pool?.avg_speed ?? '–'} / {pool?.avg_attitude ?? '–'}</span></KV>
+          <KV k={t.strikes}><span className="font-mono">{pool?.strikes_count ?? 0}</span></KV>
         </Card>
       </div>
 
@@ -663,6 +675,33 @@ export default function FreelancerDetail({ amScope = null }: { amScope?: Account
               {r.sms_link && <> · <a href={r.sms_link} target="_blank" rel="noreferrer" className="text-petrol underline underline-offset-2">SMS</a></>}
               {r.phone_expires_on && <> · {r.phone_expires_on}</>}
             </p>
+          </div>
+        ))}
+      </Card>
+
+      <Card className="mb-5 p-5">
+        <SectionTitle>{t.ratings}</SectionTitle>
+        {ratings.length === 0 ? (
+          <p className="py-1 text-sm text-faint">{t.ratingsEmpty}</p>
+        ) : ratings.map(r => (
+          <div key={r.id} className="flex items-baseline justify-between gap-3 border-b border-hair py-2.5 last:border-b-0">
+            <div className="min-w-0">
+              <p className="truncate text-sm text-ink">{r.task?.title ?? '—'}</p>
+              {r.note && <p className="mt-0.5 text-xs text-muted">{r.note}</p>}
+            </div>
+            <p className="shrink-0 font-mono text-xs text-ink">{r.quality} / {r.speed} / {r.attitude} · {dateShort(r.created_at)}</p>
+          </div>
+        ))}
+      </Card>
+
+      <Card className="p-5">
+        <SectionTitle>{t.strikesT}</SectionTitle>
+        {strikes.length === 0 ? (
+          <p className="py-1 text-sm text-faint">{t.strikesEmpty}</p>
+        ) : strikes.map(s => (
+          <div key={s.id} className="border-b border-hair py-2.5 last:border-b-0">
+            <p className="text-sm text-ink">{s.reason}</p>
+            <p className="mt-0.5 font-mono text-xs text-faint">{s.task?.title ? `${s.task.title} · ` : ''}{dateShort(s.created_at)}</p>
           </div>
         ))}
       </Card>

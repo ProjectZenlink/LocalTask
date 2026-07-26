@@ -13,7 +13,7 @@ const COPY = {
     pending: (n: number) => `${n} 项等平台复核`,
     rejected: (n: number) => `${n} 项近 30 天被驳回`,
     phones: (n: number) => `${n} 个接码手机 7 天内到期`,
-    
+    roster: '名册',
   },
   en: {
     title: 'Today', fold: 'Fold', empty: 'All clear — nothing pending ✦',
@@ -21,7 +21,7 @@ const COPY = {
     pending: (n: number) => `${n} in platform review`,
     rejected: (n: number) => `${n} rejected in last 30d`,
     phones: (n: number) => `${n} phones expiring in 7d`,
-    
+    roster: 'Roster',
   },
 }
 

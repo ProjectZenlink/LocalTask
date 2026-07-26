@@ -211,6 +211,11 @@ export interface PoolRow {
   payout_paypal_email: string | null
   active_tasks: number
   completed_tasks: number
+  avg_quality: number | null
+  avg_speed: number | null
+  avg_attitude: number | null
+  ratings_count: number
+  strikes_count: number
   created_at: string
   managed_by: string | null
   is_rejected: boolean
@@ -290,6 +295,17 @@ export interface FreelancerCompany {
   state: string | null
   notes: string | null
   doc_paths: string[]
+  created_at: string
+}
+
+export interface Rating {
+  id: string
+  task_id: string
+  freelancer_id: string
+  quality: number
+  speed: number
+  attitude: number
+  note: string | null
   created_at: string
 }
 

@@ -10,15 +10,15 @@ import { useAm } from './AmLayout'
 const COPY = {
   zh: {
     title: '人才库', sub: '全平台的 freelancer,信息与控制台同级。点名字看完整档案;无归属的可以认领或驳回。',
-    search: '按名字搜索…', name: '姓名', email: '注册邮箱', kyc: 'KYC', load: '活跃/完成', owner: '归属', act: '',
-     owned: '已归属', none: '—', claim: '认领', reject: '驳回', rejected: '已驳回', assign: '派任务',
+    search: '按名字搜索…', name: '姓名', email: '注册邮箱', kyc: 'KYC', load: '活跃/完成', qsa: '质/速/态', strikes: 'Strikes', owner: '归属', act: '',
+    mine: '我的', owned: '已归属', none: '—', claim: '认领', reject: '驳回', rejected: '已驳回', assign: '派任务',
     empty: '暂无数据。', rejectQ: '驳回原因(内部记录):', cancel: '取消',
     paused: '已暂停', blocked: '已封禁',
   },
   en: {
     title: 'Pool', sub: 'Every freelancer on the platform, console-grade detail. Click a name for the full profile; claim or reject unowned ones.',
-    search: 'Search by name…', name: 'Name', email: 'Email', kyc: 'KYC', load: 'Active/Done', owner: 'Owner', act: '',
-     owned: 'Owned', none: '—', claim: 'Claim', reject: 'Reject', rejected: 'Rejected', assign: 'Assign task',
+    search: 'Search by name…', name: 'Name', email: 'Email', kyc: 'KYC', load: 'Active/Done', qsa: 'Q/S/A', strikes: 'Strikes', owner: 'Owner', act: '',
+    mine: 'Mine', owned: 'Owned', none: '—', claim: 'Claim', reject: 'Reject', rejected: 'Rejected', assign: 'Assign task',
     empty: 'Nothing yet.', rejectQ: 'Rejection reason (internal):', cancel: 'Cancel',
     paused: 'Paused', blocked: 'Blocked',
   },
@@ -97,7 +97,7 @@ export default function AmPool() {
             <thead className="border-b border-hair">
               <tr>
                 <Th>{t.owner}</Th><Th>{t.name}</Th><Th>{t.email}</Th><Th>{t.kyc}</Th>
-                <Th>{t.load}</Th><Th>{t.act}</Th>
+                <Th>{t.load}</Th><Th>{t.qsa}</Th><Th>{t.strikes}</Th><Th>{t.act}</Th>
               </tr>
             </thead>
             <tbody>
@@ -117,6 +117,8 @@ export default function AmPool() {
                   </Td>
                   <Td><StatusBadge status={KYC_BADGE[r.kyc_status]} label={r.kyc_status} /></Td>
                   <Td className="font-mono text-xs">{r.active_tasks} / {r.completed_tasks}</Td>
+                  <Td className="font-mono text-xs text-muted">{r.avg_quality ?? '–'} / {r.avg_speed ?? '–'} / {r.avg_attitude ?? '–'}</Td>
+                  <Td className="font-mono text-xs">{r.strikes_count}</Td>
                   <Td>
                     {r.managed_by === null && !r.is_rejected && !r.is_banned && (
                       <div className="flex gap-2">

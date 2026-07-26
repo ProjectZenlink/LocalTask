@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import SecretText from '../components/SecretText'
 import type { AcceptanceRow } from '../types/database'
 import { usd, dateTimeShort } from '../lib/format'
 import { PageHeading, Card, Button, Alert, StatusBadge } from '../components/ui'
@@ -16,8 +15,8 @@ type Row = AcceptanceRow & {
 const COPY = {
   zh: {
     title: '提成复核', sub: '第三圈：AM 验收后进入这里排队，你通过后钱才进 AM 钱包；驳回会记录原因，AM 可整改后重新验收。',
-     empty: '没有待复核的验收，休息一下 ☕',
-    thWhen: '验收于', thAm: 'AM', thFl: 'Freelancer', thType: '平台', thTask: '任务', thCreds: '账号凭证', thAmount: '提成', thAct: '',
+    pending: '待复核', empty: '没有待复核的验收，休息一下 ☕',
+    thWhen: '验收于', thAm: 'AM', thFl: 'Freelancer', thType: '平台', thTask: '任务', thAmount: '提成', thAct: '',
     approve: '通过', reject: '驳回', none: '—',
     approveT: '通过并入账', approveQ: (amt: string, am: string) => `确认通过？${amt} 将立即计入 ${am} 的钱包。`,
     rejectT: '驳回验收', rejectQ: '驳回原因（AM 可见，必填）：', dlgCancel: '取消',
@@ -26,8 +25,8 @@ const COPY = {
   },
   en: {
     title: 'Commission review', sub: 'Third circle: AM acceptances queue here. Money hits the AM wallet only after you approve; rejections are noted and the AM can re-accept later.',
-     empty: 'Nothing to review. ☕',
-    thWhen: 'Accepted', thAm: 'AM', thFl: 'Freelancer', thType: 'Platform', thTask: 'Task', thCreds: 'Credentials', thAmount: 'Commission', thAct: '',
+    pending: 'Pending', empty: 'Nothing to review. ☕',
+    thWhen: 'Accepted', thAm: 'AM', thFl: 'Freelancer', thType: 'Platform', thTask: 'Task', thAmount: 'Commission', thAct: '',
     approve: 'Approve', reject: 'Reject', none: '—',
     approveT: 'Approve & credit', approveQ: (amt: string, am: string) => `Approve? ${amt} will be credited to ${am}'s wallet now.`,
     rejectT: 'Reject acceptance', rejectQ: 'Reason (visible to the AM, required):', dlgCancel: 'Cancel',
@@ -47,7 +46,6 @@ export default function CommissionReview() {
   const [error, setError] = useState<string | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [creds, setCreds] = useState<Record<string, { login: string | null; pass: string | null }>>({})
   const [approving, setApproving] = useState<Row | null>(null)
   const [rejecting, setRejecting] = useState<Row | null>(null)
 
@@ -62,18 +60,6 @@ export default function CommissionReview() {
     ])
     if (pRes.error) { setError(pRes.error.message); setLoaded(true); return }
     setRows((pRes.data ?? []) as unknown as Row[])
-    // 提成复核需要核账号:按关联任务批量取最新交付凭证(m24/A1)
-    const ids = ((pRes.data ?? []) as unknown as Row[]).map(r => r.task_id).filter((x): x is string => !!x)
-    if (ids.length > 0) {
-      const { data: subs } = await supabase.from('task_submissions')
-        .select('task_id, account_login, account_password, created_at')
-        .in('task_id', ids).order('created_at', { ascending: true })
-      const map: Record<string, { login: string | null; pass: string | null }> = {}
-      for (const r of (subs ?? []) as { task_id: string; account_login: string | null; account_password: string | null }[]) {
-        map[r.task_id] = { login: r.account_login, pass: r.account_password }  // 升序遍历,末次覆盖=最新
-      }
-      setCreds(map)
-    } else setCreds({})
     setDone((dRes.data ?? []) as unknown as Row[])
     setReopened((roRes.data ?? []) as unknown as Row[])
     setLoaded(true)
@@ -106,7 +92,7 @@ export default function CommissionReview() {
             <thead className="border-b border-hair">
               <tr>
                 <Th>{t.thWhen}</Th><Th>{t.thAm}</Th><Th>{t.thFl}</Th>
-                <Th>{t.thType}</Th><Th>{t.thTask}</Th><Th>{t.thCreds}</Th><Th>{t.thAmount}</Th><Th>{t.thAct}</Th>
+                <Th>{t.thType}</Th><Th>{t.thTask}</Th><Th>{t.thAmount}</Th><Th>{t.thAct}</Th>
               </tr>
             </thead>
             <tbody>
@@ -125,14 +111,6 @@ export default function CommissionReview() {
                     )}
                   </Td>
                   <Td className="max-w-[14rem] truncate text-muted">{r.task?.title ?? t.none}</Td>
-                  <Td>
-                    {r.task_id && creds[r.task_id]?.login ? (
-                      <span className="flex flex-col gap-0.5">
-                        <span className="break-all font-mono text-[11px]">{creds[r.task_id].login}</span>
-                        {creds[r.task_id].pass && <SecretText value={creds[r.task_id].pass!} />}
-                      </span>
-                    ) : <span className="text-faint">—</span>}
-                  </Td>
                   <Td className="whitespace-nowrap font-mono text-sm text-ink">{usd(Number(r.amount))}</Td>
                   <Td>
                     <div className="flex gap-2">

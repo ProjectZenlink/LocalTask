@@ -11,12 +11,12 @@ import { useLang } from './i18n'
 const COPY = {
   zh: {
     title: '公司', sub: '全库公司登记,可按公司名 / EIN / 州反查到 freelancer。',
-     co: '公司', ein: 'EIN', state: '州', docs: '文件',
+    search: '搜索公司名、EIN、州…', co: '公司', ein: 'EIN', state: '州', docs: '文件',
     fl: 'Freelancer', added: '登记', empty: '还没有公司登记。', notes: '备注',
   },
   en: {
     title: 'Companies', sub: 'Every company on file — reverse-search by name / EIN / state to the freelancer.',
-     co: 'Company', ein: 'EIN', state: 'State', docs: 'Docs',
+    search: 'Search name, EIN, state…', co: 'Company', ein: 'EIN', state: 'State', docs: 'Docs',
     fl: 'Freelancer', added: 'Added', empty: 'No companies on file yet.', notes: 'Notes',
   },
 }

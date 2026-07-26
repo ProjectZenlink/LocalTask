@@ -13,7 +13,7 @@ const COPY = {
   zh: {
     title: '人才库', sub: '所有 freelancer 的状态、负载、评分与可靠性记录。',
     search: '按名字搜索…', name: '姓名', email: '注册邮箱', kyc: 'KYC', combo: '收款组合',
-    active: '活跃', done: '完成', contact: '联系',
+    active: '活跃', done: '完成', qsa: '质/速/态', strikes: 'Strikes', contact: '联系',
     assign: '派任务', assignTitle: '派任务给', pickTask: '选择任务(未指派)', noTasks: '没有未指派的任务。先去「任务」页新建。', send: '直接派任务', sent: '已派:', pause: '暂停', resume: '恢复', block: '封禁', unblock: '解封',
     paused: '已暂停', blocked: '已封禁', rejected: '已驳回', pauseHint: '暂停 = 不再收到 offer(可恢复);封禁 = 永久,仅用于欺诈。',
     empty: '还没有 freelancer 注册。', blockQ: '封禁是给欺诈用的,可靠性问题请用「暂停」。确认永久封禁?', dlgCancel: '取消', confirmBlock: '确认封禁',
@@ -21,7 +21,7 @@ const COPY = {
   en: {
     title: 'Pool', sub: 'Every freelancer: status, load, ratings, reliability.',
     search: 'Search by name…', name: 'Name', email: 'Email', kyc: 'KYC', combo: 'Payout combo',
-    active: 'Active', done: 'Done', contact: 'Contact',
+    active: 'Active', done: 'Done', qsa: 'Q/S/A', strikes: 'Strikes', contact: 'Contact',
     assign: 'Assign', assignTitle: 'Assign task to', pickTask: 'Pick a task (unassigned)', noTasks: 'No unassigned tasks. Create one on the Tasks page.', send: 'Assign now', sent: 'Assigned:', pause: 'Pause', resume: 'Resume', block: 'Block', unblock: 'Unblock',
     paused: 'Paused', blocked: 'Blocked', rejected: 'Rejected', pauseHint: 'Pause = no new offers (reversible); Block = permanent, fraud only.',
     empty: 'No freelancers yet.', blockQ: 'Blocking is for fraud — use Pause for reliability issues. Block permanently?', dlgCancel: 'Cancel', confirmBlock: 'Block',
@@ -111,7 +111,7 @@ export default function AdminPool() {
             <thead className="border-b border-hair">
               <tr>
                 <Th>AM</Th><Th>{t.name}</Th><Th>{t.email}</Th><Th>{t.kyc}</Th><Th>{t.combo}</Th>
-                <Th>{t.active}</Th><Th>{t.done}</Th><Th>{t.contact}</Th><Th></Th>
+                <Th>{t.active}</Th><Th>{t.done}</Th><Th>{t.qsa}</Th><Th>{t.strikes}</Th><Th>{t.contact}</Th><Th></Th>
               </tr>
             </thead>
             <tbody>
@@ -129,6 +129,8 @@ export default function AdminPool() {
                   <Td className="whitespace-nowrap font-mono text-xs">{r.payout_network && r.payout_token ? payoutLabel(r.payout_network, r.payout_token) : '—'}</Td>
                   <Td className="font-mono text-xs">{r.active_tasks}</Td>
                   <Td className="font-mono text-xs">{r.completed_tasks}</Td>
+                  <Td className="whitespace-nowrap font-mono text-xs">{r.avg_quality ?? '–'} / {r.avg_speed ?? '–'} / {r.avg_attitude ?? '–'}</Td>
+                  <Td className="font-mono text-xs">{r.strikes_count}</Td>
                   <Td className="whitespace-nowrap font-mono text-xs">
                     {r.contact_whatsapp && <a className="text-petrol underline underline-offset-2" href={waLink(r.contact_whatsapp)} target="_blank" rel="noreferrer">WA</a>}
                     {r.contact_whatsapp && r.contact_telegram && ' · '}

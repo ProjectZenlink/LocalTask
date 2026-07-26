@@ -103,11 +103,6 @@ export function signTaskFiles(paths: string[]) {
   return signFiles('task-attachments', paths)
 }
 
-/** 北京时间日界线:签到体系全站统一口径(与后端 Asia/Shanghai 一致)。offsetDays=-1 为昨天。 */
-export function bjDay(offsetDays = 0): string {
-  return new Date(Date.now() + 8 * 3600_000 + offsetDays * 86400_000).toISOString().slice(0, 10)
-}
-
 /** 点击时现签并打开:彻底避免"页面开久了链接过期"的 InvalidJWT/exp 报错(m22/G2) */
 export async function openSigned(bucket: string, path: string) {
   const { data } = await supabase.storage.from(bucket).createSignedUrl(path, 300)

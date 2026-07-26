@@ -24,6 +24,25 @@ export function Td({ children, className = '' }: { children?: ReactNode; classNa
 }
 
 /** 1–5 picker for the three rating dimensions. */
+export function Stars({ value, onChange }: { value: number; onChange: (n: number) => void }) {
+  return (
+    <div className="flex gap-1">
+      {[1, 2, 3, 4, 5].map(n => (
+        <button
+          key={n}
+          type="button"
+          onClick={() => onChange(n)}
+          className={`h-8 w-8 rounded-lg border font-mono text-sm transition ${
+            n <= value ? 'border-petrol bg-petrol text-paper' : 'border-hair bg-white text-faint hover:text-ink'
+          }`}
+        >
+          {n}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 export function KV({ k, children }: { k: string; children: ReactNode }) {
   return (
     <div className="flex items-baseline gap-3 py-1">

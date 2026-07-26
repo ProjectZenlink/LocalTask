@@ -94,12 +94,10 @@ export default function App() {
       <Route path="/terms" element={<Terms />} />
       <Route path="/privacy" element={<Privacy />} />
 
-      {/* 独立认证页:无站点导航(m24/C1) */}
-      <Route path="/signup" element={<Signup />} />
-      <Route path="/login" element={<Login />} />
-
       {/* Freelancer / 公共外壳 */}
       <Route element={<Shell />}>
+        <Route path="/signup" element={<Signup />} />
+        <Route path="/login" element={<Login />} />
         <Route path="/verify" element={<Verify />} />
 
         <Route path="/build-profile" element={<ProtectedRoute freelancerOnly><BuildProfile /></ProtectedRoute>} />

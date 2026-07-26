@@ -1,7 +1,6 @@
 import { useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import AuthShell from '../components/AuthShell'
 import { PageHeading, Field, Button, Alert } from '../components/ui'
 import PasswordField from '../components/PasswordField'
 import CaptchaBox, { type TurnstileInstance } from '../components/CaptchaBox'
@@ -48,8 +47,7 @@ export default function Login() {
   }
 
   return (
-    <AuthShell>
-    <div>
+    <div className="mx-auto max-w-sm">
       <PageHeading>{t.title}</PageHeading>
       {error && <Alert tone="error">{error}</Alert>}
       <Field label={t.email} type="email" value={email} onChange={e => setEmail(e.target.value)} />
@@ -62,6 +60,5 @@ export default function Login() {
         {t.noAccount} <Link to="/signup" className="text-petrol underline underline-offset-2">{t.signup}</Link>
       </p>
     </div>
-    </AuthShell>
   )
 }

@@ -3,7 +3,6 @@ import type { ReactNode } from 'react'
 import { ListChecks, Wallet, UserRound } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useProfile } from '../context/ProfileContext'
-import KycBanner from './KycBanner'
 import FreelancerBell from './FreelancerBell'
 import { supabase } from '../lib/supabase'
 import { ConfirmDialog } from './dialogs'
@@ -91,9 +90,6 @@ function LayoutInner({ children }: { children: ReactNode }) {
       </header>
 
       <main className={`mx-auto max-w-4xl px-5 py-8 sm:py-10 ${session && !isAdmin && !isAm ? 'pb-24 sm:pb-10' : ''}`}>
-        {profile?.role === 'user' && profile.kyc_status === 'pending' && (
-          <div className="mb-5"><KycBanner /></div>
-        )}
         {children}
       </main>
 

@@ -22,14 +22,14 @@ const REC_STATUS: Record<string, { s: 'verified' | 'pending' | 'unverified'; zh:
 const COPY = {
   zh: {
     title: '账号', sub: '全库已开账号的集中视图。按平台筛选,一处看全:账号 / 密码 / 2FA / 接码手机 / 到期。',
-     all: '全部', platform: '平台', fl: 'Freelancer',
+    search: '搜索账号、手机、Freelancer…', all: '全部', platform: '平台', fl: 'Freelancer',
     login: '账号', pw: '密码', twofa: '2FA', phone: '手机 / 接码', expiry: '到期',
     empty: '没有账号资料。', sms: 'SMS', expired: '已过期', total: '条记录', status: '状态', stAll: '全部状态',
     flag: '跳审核', flagQ: '跳审核原因(会同步打回对应验收,归属 AM 铃铛可见):', dlgCancel: '取消',
   },
   en: {
     title: 'Accounts', sub: 'Every opened account in one place. Filter by platform: login / password / 2FA / SMS phone / expiry.',
-     all: 'All', platform: 'Platform', fl: 'Freelancer',
+    search: 'Search login, phone, freelancer…', all: 'All', platform: 'Platform', fl: 'Freelancer',
     login: 'Login', pw: 'Password', twofa: '2FA', phone: 'Phone / SMS', expiry: 'Expires',
     empty: 'No account records.', sms: 'SMS', expired: 'Expired', total: 'records', status: 'Status', stAll: 'All statuses',
     flag: 'Flag', flagQ: 'Flag reason (reopens the matching acceptance; the AM sees it in their bell):', dlgCancel: 'Cancel',

@@ -40,8 +40,8 @@ const COPY = {
     expires: '手机号到期日', notes: '备注', save: '保存', saving: '保存中…', cancel: '取消', edit: '编辑',
     daysLeft: (d: number) => d < 0 ? '已过期' : d === 0 ? '今天到期' : `剩 ${d} 天`,
     noRec: '还没有账号资料。',
-    suspend: '暂停接单', resume: '恢复接单', suspended: '已暂停',
-    suspendQ: '暂停原因(内部记录):',
+    suspend: '暂停接单', resume: '恢复接单', suspended: '已暂停', strike: '记录违规',
+    suspendQ: '暂停原因(内部记录):', strikeQ: 'Strike 原因(内部记录):',
     circleHint: '每一项要走完三关才计提成：① TA 完成任务 → ② 你验收 → ③ 平台复核通过。',
     profileLink: '查看档案', otherT: '其他任务(逐单验收)', otherEmpty: '没有已完成的「其他」类型任务。', est: '预计', otherHint: '「其他」不占开通清单;每单单独走三关,金额按单笔覆盖或费率表。',
   },
@@ -55,8 +55,8 @@ const COPY = {
     expires: 'Phone expires on', notes: 'Notes', save: 'Save', saving: 'Saving…', cancel: 'Cancel', edit: 'Edit',
     daysLeft: (d: number) => d < 0 ? 'expired' : d === 0 ? 'expires today' : `${d}d left`,
     noRec: 'No account records yet.',
-    suspend: 'Pause', resume: 'Resume', suspended: 'Paused',
-    suspendQ: 'Pause reason (internal):',
+    suspend: 'Pause', resume: 'Resume', suspended: 'Paused', strike: 'Record strike',
+    suspendQ: 'Pause reason (internal):', strikeQ: 'Strike reason (internal):',
     circleHint: 'Each item clears three gates before it pays: ① they finish → ② you accept → ③ platform approves.',
     profileLink: 'Full profile', otherT: 'Other tasks (per-task acceptance)', otherEmpty: 'No completed "Other" tasks.', est: 'est.', otherHint: '"Other" tasks skip the 8-item list; each clears the three gates on its own.',
   },
@@ -93,7 +93,7 @@ export default function AmFreelancerBoard() {
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busyType, setBusyType] = useState<string | null>(null)
-  const [dialog, setDialog] = useState<null | 'suspend'>(null)
+  const [dialog, setDialog] = useState<null | 'suspend' | 'strike'>(null)
 
   const [openType, setOpenType] = useState<PlatformType | null>(null)
   const [recEditing, setRecEditing] = useState<'new' | string | null>(null)
@@ -197,6 +197,14 @@ export default function AmFreelancerBoard() {
     await load()
   }
 
+  async function addStrike(reason: string) {
+    setDialog(null)
+    if (!id) return
+    setError(null)
+    const { error: e } = await supabase.from('strikes').insert({ freelancer_id: id, reason })
+    if (e) { setError(e.message); return }
+  }
+
   function startRec(type: PlatformType, r: AccountRecord | null) {
     setOpenType(type); setError(null)
     if (!r) { setRecEditing('new'); setRecForm(REC_EMPTY); return }
@@ -284,6 +292,7 @@ export default function AmFreelancerBoard() {
           {suspended
             ? <Button variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => void resume()}>{t.resume}</Button>
             : <Button variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => setDialog('suspend')}>{t.suspend}</Button>}
+          <Button variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => setDialog('strike')}>{t.strike}</Button>
         </div>
       </div>
       {error && <Alert tone="error">{error}</Alert>}
@@ -471,6 +480,15 @@ export default function AmFreelancerBoard() {
         cancelLabel={t.cancel}
         danger
         onConfirm={reason => void setSuspend(reason)}
+        onClose={() => setDialog(null)}
+      />
+      <PromptDialog
+        open={dialog === 'strike'}
+        title={t.strike}
+        hint={t.strikeQ}
+        confirmLabel={t.strike}
+        cancelLabel={t.cancel}
+        onConfirm={reason => void addStrike(reason)}
         onClose={() => setDialog(null)}
       />
     </div>

@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import { useProfile } from '../context/ProfileContext'
 import type { Task, BonusGrant } from '../types/database'
 import { payoutLabel } from '../types/database'
-import { lt, usd, taskMoney, dateShort, txUrl, shortHash, bjDay } from '../lib/format'
+import { lt, usd, taskMoney, dateShort, txUrl, shortHash } from '../lib/format'
 import { PageHeading, Card, Eyebrow, Button } from '../components/ui'
 import { useI18n } from '../lib/i18n'
 
@@ -131,8 +131,8 @@ export default function Wallet() {
   useEffect(() => { void loadTasks() }, [loadTasks])
 
   // 北京时间日界线,与后端一致;连续天数按"AM 已复核"口径(m23)
-  const bjToday = bjDay()
-  const bjYesterday = bjDay(-1)
+  const bjToday = new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10)
+  const bjYesterday = new Date(Date.now() + 8 * 3600_000 - 86400_000).toISOString().slice(0, 10)
   const confirmedSet = new Set(days.filter(x => x.confirmed_at).map(x => x.day))
   const todayRow = days.find(x => x.day === bjToday)
   const checkedToday = !!todayRow
@@ -356,9 +356,9 @@ export default function Wallet() {
                 <p className="mt-0.5 font-mono text-xs text-faint">+{lt(x.amount)}</p>
               </div>
               <div className="flex shrink-0 items-center gap-2.5">
-                {x.paid_at ? (
+                {x.tx_hash ? (
                   <>
-                    {x.tx_hash && x.payout_network && (
+                    {x.payout_network && (
                       <a href={txUrl(x.payout_network, x.tx_hash)} target="_blank" rel="noreferrer"
                         className="font-mono text-[11px] text-petrol underline underline-offset-2">{shortHash(x.tx_hash)}</a>
                     )}

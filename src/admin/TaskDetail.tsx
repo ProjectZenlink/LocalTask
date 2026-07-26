@@ -4,12 +4,12 @@ import { supabase } from '../lib/supabase'
 import { SITE_URL } from '../lib/site'
 import SecretText from '../components/SecretText'
 import { useAuth } from '../context/AuthContext'
-import type { Task, TaskOffer, TaskSubmission, PoolRow, AccountManager } from '../types/database'
+import type { Task, TaskOffer, TaskSubmission, Rating, PoolRow, AccountManager } from '../types/database'
 import { payoutLabel, TASK_TYPES } from '../types/database'
 import type { PlatformType } from '../types/database'
 import { money, usd, lt, taskMoney, dateShort, dateTimeShort, txUrl, shortHash, signTaskFiles, fileNameFromPath, isImagePath, typeLabel, openSigned } from '../lib/format'
 import { Card, Button, Alert, Label, Input, Textarea, Linkified, SectionTitle } from '../components/ui'
-import { TaskStatusBadge, Th, Td, KV, waLink, tgLink, PromptDialog } from './bits'
+import { TaskStatusBadge, Th, Td, Stars, KV, waLink, tgLink, PromptDialog } from './bits'
 import { xLink, toLocalInput, safeFileName } from '../lib/format'
 import { useLang } from './i18n'
 
@@ -28,17 +28,17 @@ const COPY = {
     match: '可派的 Freelancer(已认证 · 开着接单)',
     matchEmpty: '暂无可派的人——现在没有人处于「开着接单」状态。',
     send: '直接派任务', sending: '派发中…',
-    active: '活跃', done: '完成', combo: '收款方式',
+    active: '活跃', done: '完成', strikes: 'Strikes', combo: '收款方式',
     inProgress: '等 freelancer 提交交付。', returnedNote: '上一版已退回:',
     review: '审核交付', reviewNote: '审核意见(退回时必填,freelancer 可见)', approve: '通过', reject: '退回修改',
     vNote: '退回必须填写审核意见。',
     payTitle: '放款', payReq: 'freelancer 已在钱包申请提现', payHint1: '把下面的地址和金额发给客户打款:', payHint2: '客户打款后把交易 hash 填在这里:',
-    hash: '交易 Hash / PayPal 交易号(可选)', payNote: '付款备注(可选)', markPaid: '标记已付款', paid: '已标记付款,等 freelancer 确认到账关单。',
+    hash: '交易 Hash / PayPal 交易号', payNote: '付款备注(可选)', markPaid: '标记已付款', paid: '已标记付款,等 freelancer 确认到账关单。',
     hashBad: '交易号格式看起来不对:Tron 是 64 位十六进制,Ethereum 是 0x+64 位,PayPal 是 8–32 位字母数字。请核对后重填。',
     tx: '交易',
-    back: '← 任务列表', tags: '标签', dlgCancel: '取消', copyLink: '复制验收链接', copied: '已复制 ✓', edit: '编辑任务', save: '保存修改', saving: '保存中…', cancelEdit: '取消编辑', addFiles: '追加附件(可多选)', tagHint: '标签(回车或逗号添加)', doneT: '已完成',
-    
-    cancel: '取消任务', cancelQ: '取消原因:',
+    back: '← 任务列表', tags: '标签', dlgCancel: '取消', copyLink: '复制验收链接', copied: '已复制 ✓', edit: '编辑任务', save: '保存修改', saving: '保存中…', cancelEdit: '取消编辑', addFiles: '追加附件(可多选)', tagHint: '标签(回车或逗号添加)', rate: '三维评分', quality: '质量', speed: '速度', attitude: '态度',
+    rateNote: '内部备注(可选)', saveRating: '保存评分', rated: '已评分',
+    strike: '记 Strike', strikeQ: 'Strike 原因(内部记录):', cancel: '取消任务', cancelQ: '取消原因:',
     cancelled: '任务已取消', offerHistory: 'Offer 历史', subHistory: '交付历史', version: '版本',
     confirmed: 'freelancer 已确认到账', reviewer: '审核意见:',
     commission: '提成', byRate: '按费率表', override1: '(单笔覆盖)', editCom: '改提成', reassign: '改归属',
@@ -51,17 +51,17 @@ const COPY = {
     match: 'Available freelancers (verified · open to work)',
     matchEmpty: 'Nobody available — no one is open to work right now.',
     send: 'Assign now', sending: 'Assigning…',
-    active: 'Active', done: 'Done', combo: 'Wallet',
+    active: 'Active', done: 'Done', strikes: 'Strikes', combo: 'Wallet',
     inProgress: 'Waiting for the freelancer to submit.', returnedNote: 'Last version was returned:',
     review: 'Review submission', reviewNote: 'Review note (required when returning, visible to freelancer)', approve: 'Approve', reject: 'Return for revision',
     vNote: 'A review note is required when returning.',
     payTitle: 'Payment', payReq: 'Freelancer requested payout from their wallet', payHint1: 'Send this address and amount to the client:', payHint2: 'Once the client pays, paste the transaction hash:',
-    hash: 'Transaction hash / PayPal txn ID (optional)', payNote: 'Payment note (optional)', markPaid: 'Mark as paid', paid: 'Marked paid — waiting for the freelancer to confirm receipt.',
+    hash: 'Transaction hash / PayPal txn ID', payNote: 'Payment note (optional)', markPaid: 'Mark as paid', paid: 'Marked paid — waiting for the freelancer to confirm receipt.',
     hashBad: 'That reference looks off: Tron = 64 hex chars, Ethereum = 0x + 64 hex, PayPal = 8–32 alphanumerics. Please double-check.',
     tx: 'Transaction',
-    back: '← All tasks', tags: 'Tags', dlgCancel: 'Cancel', copyLink: 'Copy acceptance link', copied: 'Copied ✓', edit: 'Edit task', save: 'Save changes', saving: 'Saving…', cancelEdit: 'Cancel editing', addFiles: 'Add attachments (multiple)', tagHint: 'Tags (Enter or comma to add)', doneT: 'Completed',
-    
-    cancel: 'Cancel task', cancelQ: 'Cancellation reason:',
+    back: '← All tasks', tags: 'Tags', dlgCancel: 'Cancel', copyLink: 'Copy acceptance link', copied: 'Copied ✓', edit: 'Edit task', save: 'Save changes', saving: 'Saving…', cancelEdit: 'Cancel editing', addFiles: 'Add attachments (multiple)', tagHint: 'Tags (Enter or comma to add)', rate: 'Rating', quality: 'Quality', speed: 'Speed', attitude: 'Attitude',
+    rateNote: 'Internal note (optional)', saveRating: 'Save rating', rated: 'Rated',
+    strike: 'Record strike', strikeQ: 'Strike reason (internal):', cancel: 'Cancel task', cancelQ: 'Cancellation reason:',
     cancelled: 'Task cancelled', offerHistory: 'Offer history', subHistory: 'Submission history', version: 'Version',
     confirmed: 'Freelancer confirmed receipt', reviewer: 'Review note:',
     commission: 'Commission', byRate: 'per rate table', override1: '(override)', editCom: 'Edit commission', reassign: 'Reassign',
@@ -80,6 +80,7 @@ export default function AdminTaskDetail({ amScope = null }: { amScope?: AccountM
   const [amList, setAmList] = useState<AccountManager[]>([])
   const [offers, setOffers] = useState<OfferRow[]>([])
   const [subs, setSubs] = useState<TaskSubmission[]>([])
+  const [rating, setRating] = useState<Rating | null>(null)
   const [pool, setPool] = useState<PoolRow[]>([])
   const [briefFiles, setBriefFiles] = useState<Signed[]>([])
   const [subFiles, setSubFiles] = useState<Record<string, Signed[]>>({})
@@ -90,20 +91,25 @@ export default function AdminTaskDetail({ amScope = null }: { amScope?: AccountM
   const [reviewNote, setReviewNote] = useState('')
   const [hash, setHash] = useState('')
   const [payNote, setPayNote] = useState('')
-  const [dialog, setDialog] = useState<null | 'cancel' | 'editcom'>(null)
+  const [rQ, setRQ] = useState(0)
+  const [rS, setRS] = useState(0)
+  const [rA, setRA] = useState(0)
+  const [rNote, setRNote] = useState('')
+  const [dialog, setDialog] = useState<null | 'strike' | 'cancel' | 'editcom'>(null)
   const [copied, setCopied] = useState(false)
   const [editing, setEditing] = useState(false)
 
   const load = useCallback(async () => {
     if (!id) return
     setError(null)
-    const [tRes, amRes, oRes, sRes] = await Promise.all([
+    const [tRes, amRes, oRes, sRes, rRes] = await Promise.all([
       supabase.from('tasks').select('*, am:account_managers(name, whatsapp, telegram, x), rate_item:custom_rate_items(id, label, amount)').eq('id', id).maybeSingle(),
       supabase.from('account_managers').select('*').eq('is_active', true).order('name'),
       supabase.from('task_offers')
         .select('*, freelancer:profiles!task_offers_freelancer_id_fkey(display_name)')
         .eq('task_id', id).order('created_at', { ascending: false }),
       supabase.from('task_submissions').select('*').eq('task_id', id).order('version', { ascending: false }),
+      supabase.from('ratings').select('*').eq('task_id', id).maybeSingle(),
     ])
     if (tRes.error) { setError(tRes.error.message); setLoaded(true); return }
     const tk = (tRes.data ?? null) as TaskRow | null
@@ -112,6 +118,7 @@ export default function AdminTaskDetail({ amScope = null }: { amScope?: AccountM
     setOffers((oRes.data ?? []) as OfferRow[])
     const list = (sRes.data ?? []) as TaskSubmission[]
     setSubs(list)
+    setRating((rRes.data ?? null) as Rating | null)
     setLoaded(true)
 
     if (tk) {
@@ -164,17 +171,33 @@ export default function AdminTaskDetail({ amScope = null }: { amScope?: AccountM
 
   const markPaid = () => {
     const h = hash.trim()
-    // m24/B1:交易号选填 —— 留空直接放行,填了才做格式体检
-    const okFormat = !h ? true : task.payout_method === 'paypal'
+    if (!h) { setError(t.hash); return }
+    const okFormat = task.payout_method === 'paypal'
       ? /^[A-Za-z0-9-]{8,32}$/.test(h)
       : task.payout_network === 'tron' ? /^[0-9a-fA-F]{64}$/.test(h)
       : task.payout_network === 'ethereum' ? /^0x[0-9a-fA-F]{64}$/.test(h)
       : true
     if (!okFormat) { setError(t.hashBad); return }
     void run(async () => supabase.from('tasks').update({
-      tx_hash: h || null, payment_note: payNote.trim() || null,
+      tx_hash: hash.trim(), payment_note: payNote.trim() || null,
       paid_at: new Date().toISOString(), paid_marked_by: user?.id ?? null,
     }).eq('id', task.id))
+  }
+
+  const saveRating = () => {
+    if (!(rQ && rS && rA) || !task.assigned_freelancer) return
+    void run(async () => supabase.from('ratings').insert({
+      task_id: task.id, freelancer_id: task.assigned_freelancer,
+      quality: rQ, speed: rS, attitude: rA, note: rNote.trim() || null, rated_by: user?.id ?? null,
+    }))
+  }
+
+  const doStrike = (reason: string) => {
+    setDialog(null)
+    if (!task.assigned_freelancer) return
+    void run(async () => supabase.from('strikes').insert({
+      freelancer_id: task.assigned_freelancer, task_id: task.id, reason, created_by: user?.id ?? null,
+    }))
   }
 
   const doCancel = (reason: string) => {
@@ -320,7 +343,7 @@ export default function AdminTaskDetail({ amScope = null }: { amScope?: AccountM
             <div className="overflow-x-auto">
               <table className="w-full border-collapse">
                 <thead className="border-b border-hair">
-                  <tr><Th>Freelancer</Th><Th>{t.combo}</Th><Th>{t.active}</Th><Th>{t.done}</Th><Th>WhatsApp / TG</Th><Th></Th></tr>
+                  <tr><Th>Freelancer</Th><Th>{t.combo}</Th><Th>{t.active}</Th><Th>{t.done}</Th><Th>Q / S / A</Th><Th>{t.strikes}</Th><Th>WhatsApp / TG</Th><Th></Th></tr>
                 </thead>
                 <tbody>
                   {pool.map(p => (
@@ -329,6 +352,8 @@ export default function AdminTaskDetail({ amScope = null }: { amScope?: AccountM
                       <Td className="whitespace-nowrap font-mono text-xs">{p.payout_method === 'paypal' ? 'PayPal' : p.payout_network && p.payout_token ? payoutLabel(p.payout_network, p.payout_token) : '—'}</Td>
                       <Td className="font-mono text-xs">{p.active_tasks}</Td>
                       <Td className="font-mono text-xs">{p.completed_tasks}</Td>
+                      <Td className="font-mono text-xs">{p.avg_quality ?? '–'} / {p.avg_speed ?? '–'} / {p.avg_attitude ?? '–'}</Td>
+                      <Td className="font-mono text-xs">{p.strikes_count}</Td>
                       <Td className="font-mono text-xs">
                         {p.contact_whatsapp && <a className="text-petrol underline underline-offset-2" href={waLink(p.contact_whatsapp)} target="_blank" rel="noreferrer">WA</a>}
                         {p.contact_whatsapp && p.contact_telegram && ' · '}
@@ -429,13 +454,29 @@ export default function AdminTaskDetail({ amScope = null }: { amScope?: AccountM
       {/* ── 已完成:评分 ── */}
       {task.status === 'completed' && (
         <Card className="mb-5 p-5">
-          <SectionTitle>{t.doneT}</SectionTitle>
+          <SectionTitle>{t.rate}</SectionTitle>
           {task.tx_hash && task.payout_network && (
             <p className="mb-3 font-mono text-xs text-muted">
               {t.tx}: <a className="text-petrol underline underline-offset-2" href={txUrl(task.payout_network, task.tx_hash)} target="_blank" rel="noreferrer">{shortHash(task.tx_hash)}</a>
               {task.freelancer_confirmed_at && <> · {t.confirmed} {dateShort(task.freelancer_confirmed_at)}</>}
               {' · '}{lt(task.amount)} {lang === 'zh' ? '已结清' : 'settled'}
             </p>
+          )}
+          {rating ? (
+            <p className="font-mono text-sm text-ink">
+              {t.rated}: {t.quality} {rating.quality} · {t.speed} {rating.speed} · {t.attitude} {rating.attitude}
+              {rating.note && <span className="text-muted"> — {rating.note}</span>}
+            </p>
+          ) : (
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
+                <div><Label>{t.quality}</Label><Stars value={rQ} onChange={setRQ} /></div>
+                <div><Label>{t.speed}</Label><Stars value={rS} onChange={setRS} /></div>
+                <div><Label>{t.attitude}</Label><Stars value={rA} onChange={setRA} /></div>
+              </div>
+              <div><Label>{t.rateNote}</Label><Input value={rNote} onChange={e => setRNote(e.target.value)} /></div>
+              <Button disabled={busy || !(rQ && rS && rA)} onClick={saveRating} className="self-start">{t.saveRating}</Button>
+            </div>
           )}
         </Card>
       )}
@@ -447,6 +488,7 @@ export default function AdminTaskDetail({ amScope = null }: { amScope?: AccountM
       {/* ── 操作条 ── */}
       {(canCancel || task.assigned_freelancer) && (
         <div className="mb-6 flex flex-wrap gap-2">
+          {task.assigned_freelancer && <Button variant="ghost" disabled={busy} onClick={() => setDialog('strike')}>{t.strike}</Button>}
           {canCancel && <Button variant="danger" disabled={busy} onClick={() => setDialog('cancel')}>{t.cancel}</Button>}
         </div>
       )}
@@ -470,6 +512,15 @@ export default function AdminTaskDetail({ amScope = null }: { amScope?: AccountM
         cancelLabel={t.dlgCancel}
         danger
         onConfirm={doCancel}
+        onClose={() => setDialog(null)}
+      />
+      <PromptDialog
+        open={dialog === 'strike'}
+        title={t.strike}
+        hint={t.strikeQ}
+        confirmLabel={t.strike}
+        cancelLabel={t.dlgCancel}
+        onConfirm={doStrike}
         onClose={() => setDialog(null)}
       />
       <PromptDialog
