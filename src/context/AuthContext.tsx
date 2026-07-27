@@ -1,0 +1,38 @@
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import type { Session, User } from '@supabase/supabase-js'
+import { supabase } from '../lib/supabase'
+
+interface AuthState {
+  session: Session | null
+  user: User | null
+  loading: boolean
+}
+
+const AuthContext = createContext<AuthState>({ session: null, user: null, loading: true })
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [session, setSession] = useState<Session | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session)
+      setLoading(false)
+    })
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
+      // 令牌静默续期时 user 不变:保留旧引用,避免整站无谓重渲染(观感=页面自己刷新)
+      setSession(prev => (prev && s && prev.user.id === s.user.id ? prev : s))
+    })
+    return () => sub.subscription.unsubscribe()
+  }, [])
+
+  return (
+    <AuthContext.Provider value={{ session, user: session?.user ?? null, loading }}>
+      {children}
+    </AuthContext.Provider>
+  )
+}
+
+export function useAuth() {
+  return useContext(AuthContext)
+}
