@@ -11,13 +11,13 @@ const COPY = {
   zh: {
     title: '我的 Freelancer', sub: '你名下的人才:负载与签到一览。三个入口:清单验收、完整档案、直接派任务。',
     empty: '名下还没有人。去', poolLink: '人才库', empty2: '认领无归属的 freelancer。',
-    board: '清单', profile: '档案', assign: '派任务', search: '按名字/邮箱/联系方式搜索…', ciNone: '今日未签到', ciPending: '确认签到', ciDone: '签到已复核 ✓',
+    board: '清单', profile: '档案', assign: '派任务', search: '按名字/联系方式搜索…', ciNone: '今日未签到', ciPending: '确认签到', ciDone: '签到已复核 ✓',
     active: '活跃', done: '完成', suspended: '已暂停',
   },
   en: {
     title: 'My freelancers', sub: 'Your roster with load and check-ins at a glance. Three doors: checklist, full profile, assign a task.',
     empty: 'Nobody yet. Claim unowned freelancers in the', poolLink: 'Pool', empty2: '.',
-    board: 'Checklist', profile: 'Profile', assign: 'Assign task', search: 'Search by name / email / contact…', ciNone: 'No check-in today', ciPending: 'Confirm check-in', ciDone: 'Check-in confirmed ✓',
+    board: 'Checklist', profile: 'Profile', assign: 'Assign task', search: 'Search by name / contact…', ciNone: 'No check-in today', ciPending: 'Confirm check-in', ciDone: 'Check-in confirmed ✓',
     active: 'active', done: 'done', suspended: 'Paused',
   },
 }
@@ -73,7 +73,7 @@ export default function AmFreelancers() {
 
   const needle = q.trim().toLowerCase()
   const shown = needle
-    ? rows.filter(r => [r.display_name, r.full_name, r.email, r.contact_whatsapp, r.contact_telegram]
+    ? rows.filter(r => [r.display_name, r.full_name, r.contact_whatsapp, r.contact_telegram]
         .some(v => (v ?? '').toLowerCase().includes(needle)))
     : rows
 
@@ -100,8 +100,7 @@ export default function AmFreelancers() {
                 <StatusBadge status={KYC_BADGE[r.kyc_status]} label={r.kyc_status} />
                 {r.is_suspended && <StatusBadge status="pending" label={t.suspended} />}
               </div>
-              {r.email && <p className="mt-1 break-all font-mono text-[11px] text-muted">{r.email}</p>}
-              <p className="mt-0.5 font-mono text-xs text-faint">
+              <p className="mt-1 font-mono text-xs text-faint">
                 {r.active_tasks} {t.active} · {r.completed_tasks} {t.done}
               </p>
             </div>
