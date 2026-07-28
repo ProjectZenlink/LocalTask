@@ -1,0 +1,66 @@
+import { useEffect, useState } from 'react'
+import { supabase } from '../lib/supabase'
+import { useAuth } from '../context/AuthContext'
+import { PageHeading, Card, Button, Alert, Field } from '../components/ui'
+import AvatarUpload from '../components/AvatarUpload'
+import { useLang } from './i18n'
+
+const COPY = {
+  zh: { title: '我的资料', sub: '控制台身份与显示名。', email: '登录邮箱', name: '显示名',
+        save: '保存', saving: '保存中…', saved: '已保存。' },
+  en: { title: 'My profile', sub: 'Console identity and display name.', email: 'Login email', name: 'Display name',
+        save: 'Save', saving: 'Saving…', saved: 'Saved.' },
+}
+
+export default function AdminMe() {
+  const { lang } = useLang()
+  const t = COPY[lang]
+  const { user } = useAuth()
+  const [name, setName] = useState('')
+  const [avatarPath, setAvatarPath] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!user) return
+    supabase.from('profiles').select('display_name, avatar_path').eq('id', user.id).maybeSingle()
+      .then(({ data }) => {
+        const d = data as { display_name: string | null; avatar_path: string | null } | null
+        setName(d?.display_name ?? '')
+        setAvatarPath(d?.avatar_path ?? null)
+      })
+  }, [user])
+
+  async function save() {
+    if (!user) return
+    setBusy(true); setError(null); setSaved(false)
+    const { error: e } = await supabase.from('profiles')
+      .update({ display_name: name.trim() || null }).eq('id', user.id)
+    setBusy(false)
+    if (e) { setError(e.message); return }
+    setSaved(true)
+  }
+
+  return (
+    <div className="mx-auto max-w-md">
+      <PageHeading sub={t.sub}>{t.title}</PageHeading>
+      {error && <Alert tone="error">{error}</Alert>}
+      <Card className="p-5">
+        {user && (
+          <div className="mb-4 border-b border-hair pb-4">
+            <AvatarUpload uid={user.id} name={name || (user.email ?? null)} path={avatarPath} lang={lang}
+              onChanged={p => setAvatarPath(p)} />
+          </div>
+        )}
+        <div className="mb-4 flex items-start justify-between gap-4">
+          <span className="shrink-0 font-mono text-[11px] uppercase tracking-wider text-faint">{t.email}</span>
+          <span className="break-all text-right font-mono text-xs text-ink">{user?.email}</span>
+        </div>
+        <Field label={t.name} value={name} onChange={e => setName(e.target.value)} />
+        <Button onClick={() => void save()} disabled={busy} className="w-full">{busy ? t.saving : t.save}</Button>
+        {saved && <p className="mt-3 text-sm text-verified-text">{t.saved}</p>}
+      </Card>
+    </div>
+  )
+}
