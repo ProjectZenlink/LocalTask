@@ -26,12 +26,7 @@ export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [captchaToken, setCaptchaToken] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(() => {
-    const h = new URLSearchParams(window.location.hash.slice(1))
-    return h.get('error_description')
-  })
-  const [resent, setResent] = useState(false)
-  const [resendBusy, setResendBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const captchaRef = useRef<TurnstileInstance>(null)
   const navigate = useNavigate()
@@ -48,12 +43,7 @@ export default function Login() {
     // Turnstile token 是一次性的：这次请求无论成败都已消耗，重置组件换新 token
     captchaRef.current?.reset()
     setCaptchaToken(null)
-    if (err) {
-      setError(err.message === 'Email not confirmed'
-        ? 'Email not confirmed — check your inbox for our newest email, or resend below.'
-        : err.message)
-      return
-    }
+    if (err) { setError(err.message); return }
     navigate('/')
   }
 
@@ -62,17 +52,6 @@ export default function Login() {
     <div>
       <PageHeading>{t.title}</PageHeading>
       {error && <Alert tone="error">{error}</Alert>}
-        {error && error.toLowerCase().includes('not confirmed') && (
-          <button type="button" disabled={resendBusy || resent}
-            onClick={() => {
-              setResendBusy(true)
-              void supabase.auth.resend({ type: 'signup', email: email.trim() })
-                .then(() => { setResendBusy(false); setResent(true) })
-            }}
-            className="mb-3 w-full rounded-xl border border-hair bg-white px-3 py-2 font-mono text-[11px] uppercase tracking-wider text-petrol transition hover:border-petrol/40 disabled:opacity-50">
-            {resent ? 'Sent — check your inbox ✓' : resendBusy ? '…' : 'Resend confirmation email'}
-          </button>
-        )}
       <Field label={t.email} type="email" value={email} onChange={e => setEmail(e.target.value)} />
       <PasswordField label={t.password} value={password} onChange={e => setPassword(e.target.value)} />
       <CaptchaBox ref={captchaRef} action="login" onToken={setCaptchaToken} />

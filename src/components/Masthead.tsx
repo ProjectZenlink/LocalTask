@@ -1,4 +1,3 @@
-import LogoMark from './LogoMark'
 import type { ReactNode } from 'react'
 import { Link, NavLink } from 'react-router-dom'
 
@@ -23,7 +22,7 @@ export default function Masthead({
     <header className="sticky top-0 z-30 border-b border-hair bg-paper/95 backdrop-blur">
       <div className={`mx-auto flex ${maxW} flex-wrap items-stretch gap-x-6 gap-y-0 px-5`}>
         <Link to={home} className="flex items-center gap-2.5 py-3.5 font-display text-lg font-medium tracking-tight text-ink">
-          <LogoMark />
+          <img src="/logo.svg" alt="" className="h-6 w-6 rounded-md" />
           LocalTask
           {badge && (
             <span className="rounded border border-hair px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.2em] text-muted">

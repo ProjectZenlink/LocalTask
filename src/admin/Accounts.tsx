@@ -28,6 +28,8 @@ const COPY = {
     login: '账号', pw: '密码', twofa: '2FA', phone: '手机 / 接码', expiry: '到期',
     empty: '没有账号资料。', sms: 'SMS', expired: '已过期', total: '条记录', status: '状态', stAll: '全部状态',
     flag: '跳审核', flagQ: '跳审核原因(会同步打回对应验收,归属 AM 铃铛可见):', dlgCancel: '取消',
+    delQueue: '删除待审核', approve: '批准删除', rejectDel: '驳回', delBtn: '删除', delPending: '待审核',
+    delConfirm: '确认永久删除这条账号资料？', delApproveConfirm: '批准后将永久删除该资料，确认？',
   },
   en: {
     title: 'Library', sub: 'Every opened account in one place. Filter by platform: login / password / 2FA / SMS phone / expiry.', catRecords: 'Account records', catCompanies: 'Companies',
@@ -35,6 +37,8 @@ const COPY = {
     login: 'Login', pw: 'Password', twofa: '2FA', phone: 'Phone / SMS', expiry: 'Expires',
     empty: 'No account records.', sms: 'SMS', expired: 'Expired', total: 'records', status: 'Status', stAll: 'All statuses',
     flag: 'Flag', flagQ: 'Flag reason (reopens the matching acceptance; the AM sees it in their bell):', dlgCancel: 'Cancel',
+    delQueue: 'Deletion requests', approve: 'Approve delete', rejectDel: 'Reject', delBtn: 'Delete', delPending: 'Del pending',
+    delConfirm: 'Permanently delete this record?', delApproveConfirm: 'Approving permanently deletes this record. Continue?',
   },
 }
 
@@ -89,6 +93,23 @@ export default function AdminAccounts() {
     await reload()
   }
 
+  async function doDelete(id: string) {
+    if (!window.confirm(t.delConfirm)) return
+    setError(null)
+    const { error: e } = await supabase.rpc('request_record_delete', { p_record: id })
+    if (e) { setError(e.message); return }
+    await reload()
+  }
+  async function decideDel(id: string, ok: boolean) {
+    if (ok && !window.confirm(t.delApproveConfirm)) return
+    setError(null)
+    const { error: e } = await supabase.rpc('decide_record_delete', { p_record: id, p_approve: ok })
+    if (e) { setError(e.message); return }
+    await reload()
+  }
+
+  const delReqs = useMemo(() => rows.filter(r => r.delete_requested_at), [rows])
+
   const filtered = useMemo(() => {
     const k = q.trim().toLowerCase()
     return rows.filter(r => {
@@ -127,6 +148,37 @@ export default function AdminAccounts() {
       </div>
       {cat === 'companies' ? <AdminCompanies embedded /> : <>
       {error && <Alert tone="error">{error}</Alert>}
+
+      {delReqs.length > 0 && (
+        <Card className="mb-4">
+          <p className="border-b border-hair px-5 py-3 font-mono text-[11px] uppercase tracking-wider text-pending-text">
+            {t.delQueue} · {delReqs.length}
+          </p>
+          {delReqs.map(r => {
+            const n = names.get(r.freelancer_id)
+            return (
+              <div key={r.id} className="flex flex-wrap items-center justify-between gap-3 border-b border-hair px-5 py-3 last:border-b-0">
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                  <span className="rounded-full border border-hair bg-paper px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-muted">{typeLabel(r.task_type, lang)}</span>
+                  <span className="text-ink">{n?.display_name ?? n?.full_name ?? r.freelancer_id.slice(0, 8)}</span>
+                  <span className="font-mono text-xs text-muted">{r.account_login ?? '—'}</span>
+                  <span className="font-mono text-[10px] text-faint">{r.delete_requested_at ? dateShort(r.delete_requested_at) : ''}</span>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => void decideDel(r.id, true)}
+                    className="rounded-full border border-danger-text/40 px-3 py-1 font-mono text-[10px] uppercase tracking-wider text-danger-text transition hover:bg-danger-text hover:text-paper">
+                    {t.approve}
+                  </button>
+                  <button onClick={() => void decideDel(r.id, false)}
+                    className="rounded-full border border-hair px-3 py-1 font-mono text-[10px] uppercase tracking-wider text-muted transition hover:text-ink">
+                    {t.rejectDel}
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+        </Card>
+      )}
 
       <div className="mb-4 flex flex-wrap gap-1.5">
         {(['all', ...TASK_TYPES] as string[]).map(p => (
@@ -174,12 +226,22 @@ export default function AdminAccounts() {
                     </Td>
                     <Td className={`font-mono text-xs ${expiryTone(r.phone_expires_on)}`}>{r.phone_expires_on ? dateShort(r.phone_expires_on) : '—'}</Td>
                     <Td>
-                      {(r.status ?? 'active') !== 'closed' && (
-                        <button onClick={() => setFlagFor(r)}
-                          className="rounded-full border border-hair px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider text-muted transition hover:border-danger-text/40 hover:text-danger-text">
-                          {t.flag}
-                        </button>
-                      )}
+                      <span className="flex items-center gap-1.5">
+                        {(r.status ?? 'active') !== 'closed' && (
+                          <button onClick={() => setFlagFor(r)}
+                            className="rounded-full border border-hair px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider text-muted transition hover:border-danger-text/40 hover:text-danger-text">
+                            {t.flag}
+                          </button>
+                        )}
+                        {r.delete_requested_at ? (
+                          <span className="font-mono text-[10px] uppercase tracking-wider text-pending-text">{t.delPending}</span>
+                        ) : (
+                          <button onClick={() => void doDelete(r.id)}
+                            className="rounded-full border border-hair px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider text-muted transition hover:border-danger-text/40 hover:text-danger-text">
+                            {t.delBtn}
+                          </button>
+                        )}
+                      </span>
                     </Td>
                   </tr>
                 )

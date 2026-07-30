@@ -73,6 +73,7 @@ export default function AdminAms() {
   const [delFor, setDelFor] = useState<AccountManager | null>(null)
   const [unbindFor, setUnbindFor] = useState<AccountManager | null>(null)
   const [payoutFor, setPayoutFor] = useState<AccountManager | null>(null)
+  const [payoutKey, setPayoutKey] = useState<string | null>(null)   // m34:发放幂等键
   const [busy, setBusy] = useState(false)
   // 员工通道
   const [pending, setPending] = useState<PendingStaff[]>([])
@@ -83,8 +84,15 @@ export default function AdminAms() {
   const [rejectFor, setRejectFor] = useState<PendingStaff | null>(null)
   const joinUrl = `${SITE_URL}/staff/join`
 
+  const [emails, setEmails] = useState<Map<string, string>>(new Map())
+
   const load = useCallback(async () => {
     const { data, error: e } = await supabase.from('account_managers').select('*').order('created_at', { ascending: false })
+    const uids = ((data ?? []) as AccountManager[]).map(a => a.user_id).filter((x): x is string => !!x)
+    if (uids.length > 0) {
+      const { data: ps } = await supabase.from('profiles').select('id, email').in('id', uids)
+      setEmails(new Map(((ps ?? []) as { id: string; email: string | null }[]).map(x => [x.id, x.email ?? ''])))
+    } else setEmails(new Map())
     const [pa, wl] = await Promise.all([
       supabase.from('platform_acceptances').select('am_id, amount, status, created_at'),
       supabase.from('am_wallet_ledger').select('am_id, kind, amount'),
@@ -238,15 +246,16 @@ export default function AdminAms() {
   }
 
   async function doPayout(text: string) {
-    const a = payoutFor; setPayoutFor(null)
+    const a = payoutFor; const key = payoutKey
+    setPayoutFor(null); setPayoutKey(null)
     if (!a) return
     const m = text.trim().match(/^([0-9]+(?:\.[0-9]+)?)\s*(.*)$/)
     if (!m) { setError(t.payoutBad); return }
-    const { error: e } = await supabase.from('am_wallet_ledger').insert({
-      am_id: a.id, kind: 'payout', amount: Number(m[1]),
-      note: m[2] || null, created_by: user?.id ?? null,
+    const { error: e } = await supabase.rpc('am_record_payout', {
+      p_am: a.id, p_amount: Number(m[1]), p_note: m[2] || null, p_ext_ref: key,
     })
     if (e) { setError(e.message); return }
+    await load()
   }
 
   function startEdit(a: AccountManager | null) {
@@ -406,6 +415,7 @@ export default function AdminAms() {
             || (a.whatsapp ?? '').toLowerCase().includes(s)
             || (a.telegram ?? '').toLowerCase().includes(s)
             || (a.x ?? '').toLowerCase().includes(s)
+            || ((a.user_id && emails.get(a.user_id)) || '').toLowerCase().includes(s)
         }).length === 0 ? (
           <p className="py-2 text-center text-sm text-faint">{t.empty}</p>
         ) : rows.filter(a => {
@@ -415,11 +425,17 @@ export default function AdminAms() {
             || (a.whatsapp ?? '').toLowerCase().includes(s)
             || (a.telegram ?? '').toLowerCase().includes(s)
             || (a.x ?? '').toLowerCase().includes(s)
+            || ((a.user_id && emails.get(a.user_id)) || '').toLowerCase().includes(s)
         }).map(a => (
           <div key={a.id} className="border-b border-hair py-3 last:border-b-0">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-ink">{a.name}</p>
+                <p className="truncate text-sm font-medium text-ink">
+                  {a.name}
+                  {a.user_id && emails.get(a.user_id) && (
+                    <span className="ml-2 font-mono text-[11px] font-normal text-muted">{emails.get(a.user_id)}</span>
+                  )}
+                </p>
                 <p className="mt-0.5 font-mono text-xs text-faint">
                   {a.whatsapp && <a className="text-petrol underline underline-offset-2" href={waLink(a.whatsapp)} target="_blank" rel="noreferrer">WA {a.whatsapp}</a>}
                   {a.whatsapp && a.telegram && ' · '}
@@ -444,7 +460,7 @@ export default function AdminAms() {
                   ? <Button variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => setUnbindFor(a)}>{t.unbind}</Button>
                   : <Button variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => setBindFor(a)}>{t.bind}</Button>}
                 <Button variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => void toggleDetail(a.id)}>{expandId === a.id ? t.detailHide : t.detailBtn}</Button>
-                <Button variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => setPayoutFor(a)}>{t.payout}</Button>
+                <Button variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => { setPayoutKey(crypto.randomUUID()); setPayoutFor(a) }}>{t.payout}</Button>
                 <Button variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => startEdit(a)}>{t.edit}</Button>
                 <Button variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => toggleActive(a)}>
                   {a.is_active ? t.deactivate : t.activate}

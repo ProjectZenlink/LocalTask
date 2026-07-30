@@ -2,38 +2,43 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
+import { useProfile } from '../context/ProfileContext'
 import type { Task, TaskStatus } from '../types/database'
 import { taskMoney, dateShort } from '../lib/format'
 import { PageHeading, Card, Eyebrow, TaskBadge } from '../components/ui'
 import { useI18n, type Lang } from '../lib/i18n'
-import JourneyBar from '../components/JourneyBar'
+import JourneyStrip from '../components/JourneyStrip'
+import { Stagger, Item } from '../components/motionKit'
+import { SkeletonPage } from '../components/Skeleton'
 
 const COPY = {
   en: {
-    loading: 'Loading…', title: 'Your tasks',
-    sub: "Everything you've accepted, from first draft to final payment.",
+    title: 'Your tasks',
+    sub: 'From assignment to payout, all in one place.',
     due: 'due',
+    matching: 'Your AM is matching you with tasks — new ones land here.',
     sections: {
-      in_progress: ['In progress', 'Your next task lands here.'],
-      under_review: ['Under review', 'Nothing waiting on review.'],
-      pending_payment: ['Awaiting payment', 'Nothing awaiting payment.'],
-    },
+      in_progress: 'In progress',
+      under_review: 'Under review',
+      pending_payment: 'Awaiting payment',
+    } as Record<string, string>,
   },
   zh: {
-    loading: '加载中…', title: '我的任务',
-    sub: '你接下的所有任务，从开工到收款都在这里。',
+    title: '我的任务',
+    sub: '从派单到收款，都在这里。',
     due: '截止',
+    matching: '你的 AM 正在为你匹配任务，新任务会出现在这里。',
     sections: {
-      in_progress: ['进行中', '下一个任务会出现在这里。'],
-      under_review: ['审核中', '没有等待审核的提交。'],
-      pending_payment: ['待付款', '没有等待付款的任务。'],
-    },
+      in_progress: '进行中',
+      under_review: '审核中',
+      pending_payment: '待付款',
+    } as Record<string, string>,
   },
 }
 
 function TaskRow({ t, lang, due }: { t: Task; lang: Lang; due: string }) {
   return (
-    <Link to={`/tasks/${t.id}`} className="block">
+    <Link to={`/tasks/${t.id}`} className="press block">
       <div className="flex items-center justify-between gap-3 border-b border-hair py-3 last:border-b-0">
         <div className="min-w-0">
           <p className="truncate text-sm text-ink">{t.title}</p>
@@ -48,8 +53,13 @@ function TaskRow({ t, lang, due }: { t: Task; lang: Lang; due: string }) {
   )
 }
 
+/**
+ * 任务页(v49):自适应首页。
+ * 旅程未完成 → 旅程进度条当主角;有任务 → 只渲染非空分组,空态一句话。
+ */
 export default function Tasks() {
   const { user } = useAuth()
+  const { profile } = useProfile()
   const { lang } = useI18n()
   const t = COPY[lang]
   const [tasks, setTasks] = useState<Task[]>([])
@@ -69,25 +79,39 @@ export default function Tasks() {
       })
   }, [user])
 
-  if (!loaded) return <div className="text-muted">{t.loading}</div>
+  if (!loaded || !profile) return <SkeletonPage />
 
   const by = (s: TaskStatus) => tasks.filter(x => x.status === s)
-  const section = (key: keyof typeof t.sections, status: TaskStatus) => (
-    <Card className="mb-5 p-5">
-      <div className="mb-2"><Eyebrow>{t.sections[key][0]} · {by(status).length}</Eyebrow></div>
-      {by(status).length === 0
-        ? <p className="py-2 text-sm text-faint">{t.sections[key][1]}</p>
-        : by(status).map(x => <TaskRow key={x.id} t={x} lang={lang} due={t.due} />)}
-    </Card>
-  )
+  const groups = (['in_progress', 'under_review', 'pending_payment'] as TaskStatus[])
+    .map(s => ({ s, list: by(s) }))
+    .filter(g => g.list.length > 0)
+
+  const readyForTasks = profile.kyc_status === 'verified' && profile.enhanced_kyc_status === 'verified'
 
   return (
     <div className="mx-auto max-w-2xl">
       <PageHeading sub={t.sub}>{t.title}</PageHeading>
-      <JourneyBar />
-      {section('in_progress', 'in_progress')}
-      {section('under_review', 'under_review')}
-      {section('pending_payment', 'pending_payment')}
+
+      <JourneyStrip />
+
+      <Stagger>
+        {groups.map(g => (
+          <Item key={g.s}>
+            <Card className="mb-5 p-5">
+              <div className="mb-2"><Eyebrow>{t.sections[g.s]} · {g.list.length}</Eyebrow></div>
+              {g.list.map(x => <TaskRow key={x.id} t={x} lang={lang} due={t.due} />)}
+            </Card>
+          </Item>
+        ))}
+
+        {groups.length === 0 && readyForTasks && (
+          <Item>
+            <Card className="p-6 text-center">
+              <p className="text-sm leading-relaxed text-muted">{t.matching}</p>
+            </Card>
+          </Item>
+        )}
+      </Stagger>
     </div>
   )
 }

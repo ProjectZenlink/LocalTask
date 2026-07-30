@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { Button } from '../components/ui'
 import { useLang } from './i18n'
-import { onWorkline, pingWorkline } from '../lib/workline'
 
 /** admin 待办坞(m27):右下浮窗,备忘与派单一体。自留或指派给 AM;AM 侧在今日待办里完成。 */
 
@@ -39,23 +37,7 @@ export default function AdminTodoDock() {
     setRows((td.data ?? []) as TodoRow[])
     setAms((am.data ?? []) as { id: string; name: string }[])
   }, [])
-
-  // v60 实时化:切页/30s 轮询/回到标签页/站内处理动作即时刷新(与 AM 今日待办同一机制)
-  const { pathname } = useLocation()
-  useEffect(() => { void load() }, [load, pathname])
-  useEffect(() => {
-    const timer = window.setInterval(() => void load(), 30_000)
-    const onWake = () => { if (document.visibilityState === 'visible') void load() }
-    const offWorkline = onWorkline(() => void load())
-    document.addEventListener('visibilitychange', onWake)
-    window.addEventListener('focus', onWake)
-    return () => {
-      window.clearInterval(timer)
-      offWorkline()
-      document.removeEventListener('visibilitychange', onWake)
-      window.removeEventListener('focus', onWake)
-    }
-  }, [load])
+  useEffect(() => { void load() }, [load])
 
   const amName = (id: string | null) => (id ? ams.find(a => a.id === id)?.name ?? '?' : t.self)
 
@@ -64,11 +46,10 @@ export default function AdminTodoDock() {
     setBusy(true)
     await supabase.from('todos').insert({ content: draft.trim(), created_by: user.id, assigned_am: to || null })
     setBusy(false); setDraft('')
-    pingWorkline()
     await load()
   }
-  async function done(id: string) { await supabase.rpc('complete_todo', { p_id: id }); pingWorkline(); await load() }
-  async function del(id: string) { await supabase.from('todos').delete().eq('id', id); pingWorkline(); await load() }
+  async function done(id: string) { await supabase.rpc('complete_todo', { p_id: id }); await load() }
+  async function del(id: string) { await supabase.from('todos').delete().eq('id', id); await load() }
   function toggle() {
     setFolded(v => { localStorage.setItem('admin_todo_folded', v ? '0' : '1'); return !v })
   }

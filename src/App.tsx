@@ -10,7 +10,6 @@ import AdminPool from './admin/Pool'
 import AdminKyc from './admin/Kyc'
 import AdminAccounts from './admin/Accounts'
 import AdminMessages from './admin/Messages'
-import AdminPayouts from './admin/Payouts'
 import AdminMe from './admin/Me'
 import AmMessages from './am/Messages'
 import FreelancerMessages from './pages/Messages'
@@ -26,6 +25,7 @@ import ShareTask from './pages/ShareTask'
 import StaffJoin from './pages/StaffJoin'
 import StaffWaiting from './pages/StaffWaiting'
 import CommissionReview from './admin/CommissionReview'
+import AdminPayouts from './admin/Payouts'
 import AmTasks from './am/Tasks'
 import AmTaskNew from './am/TaskNew'
 import AmTaskDetail from './am/TaskDetail'
@@ -35,7 +35,6 @@ import Landing from './pages/Landing'
 import Terms from './pages/Terms'
 import Privacy from './pages/Privacy'
 import Verify from './pages/Verify'
-import Confirm from './pages/Confirm'
 import BuildProfile from './pages/BuildProfile'
 import OnboardingKYC from './pages/OnboardingKYC'
 import Tasks from './pages/Tasks'
@@ -75,9 +74,9 @@ export default function App() {
         <Route path="companies" element={<Navigate to="/admin/accounts?cat=companies" replace />} />
         <Route path="accounts" element={<AdminAccounts />} />
         <Route path="messages" element={<AdminMessages />} />
-        <Route path="payouts" element={<AdminPayouts />} />
         <Route path="me" element={<AdminMe />} />
         <Route path="review" element={<CommissionReview />} />
+        <Route path="payouts" element={<AdminPayouts />} />
       </Route>
 
       {/* AM 工作台:账户经理专属 */}
@@ -111,7 +110,6 @@ export default function App() {
       {/* Freelancer / 公共外壳 */}
       <Route element={<Shell />}>
         <Route path="/verify" element={<Verify />} />
-        <Route path="/confirm" element={<Confirm />} />
 
         <Route path="/build-profile" element={<ProtectedRoute freelancerOnly><BuildProfile /></ProtectedRoute>} />
         <Route path="/onboarding/kyc" element={<ProtectedRoute freelancerOnly><OnboardingKYC /></ProtectedRoute>} />

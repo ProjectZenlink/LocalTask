@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useLocation, useSearchParams } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { PageHeading, Card, Button, Alert, Input } from '../components/ui'
@@ -7,7 +7,6 @@ import { signFiles, openSigned } from '../lib/format'
 import { PromptDialog } from './bits'
 import RiskFlags from '../components/RiskFlags'
 import { useLang } from './i18n'
-import { pingWorkline } from '../lib/workline'
 
 interface PendingSub {
   id: string
@@ -15,7 +14,6 @@ interface PendingSub {
   created_at: string
   full_name: string | null
   display_name: string | null
-  email: string | null
   date_of_birth: string | null
   address: string | null
   city: string | null
@@ -32,32 +30,17 @@ const COPY = {
     title: 'KYC 审核', sub: '按提交顺序审核身份材料。通过后 freelancer 才能开启接单。',
     empty: '没有待审核的提交,全部处理完毕。', review: '查看材料', approve: '通过', reject: '驳回',
     saving: '保存中…', loading: '加载材料…', submitted: '提交于', rejectQ: '驳回原因(内部记录):',
-    rejectDefault: '材料不清晰', dob: '生日', dlgCancel: '取消', search: '按名字或邮箱搜索…',
+    rejectDefault: '材料不清晰', dob: '生日', dlgCancel: '取消', search: '按名字搜索…',
   },
   en: {
     title: 'KYC review', sub: 'Review identity submissions in order. Freelancers can open to work only after approval.',
     empty: 'No pending submissions. All caught up.', review: 'Review documents', approve: 'Approve', reject: 'Reject',
     saving: 'Saving…', loading: 'Loading documents…', submitted: 'submitted', rejectQ: 'Rejection reason (internal):',
-    rejectDefault: 'Documents unclear', dob: 'DOB', dlgCancel: 'Cancel', search: 'Search by name or email…',
+    rejectDefault: 'Documents unclear', dob: 'DOB', dlgCancel: 'Cancel', search: 'Search by name…',
   },
 }
 
-
-function useFocusFlash() {
-  const [sp] = useSearchParams()
-  const focus = sp.get('focus')
-  useEffect(() => {
-    if (!focus) return
-    const t = setTimeout(() => {
-      const el = document.getElementById(`f-${focus}`)
-      if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.add('focus-flash') }
-    }, 350)
-    return () => clearTimeout(t)
-  }, [focus])
-}
-
 export default function AdminKyc() {
-  useFocusFlash()
   const { lang } = useLang()
   const t = COPY[lang]
   const { user } = useAuth()
@@ -81,21 +64,20 @@ export default function AdminKyc() {
     const rows = subs ?? []
     const ids = [...new Set(rows.map(s => s.user_id))]
     const [profRes, ssnRes] = await Promise.all([
-      ids.length ? supabase.from('profiles').select('id, full_name, display_name, email, date_of_birth, address, city, state, address_zip').in('id', ids) : Promise.resolve({ data: [] as never[] }),
+      ids.length ? supabase.from('profiles').select('id, full_name, display_name, date_of_birth, address, city, state, address_zip').in('id', ids) : Promise.resolve({ data: [] as never[] }),
       ids.length ? supabase.from('kyc_ssn').select('user_id, ssn_last4, ssn_full').in('user_id', ids) : Promise.resolve({ data: [] as { user_id: string; ssn_last4: string | null; ssn_full: string | null }[] }),
     ])
     const profs = new Map((profRes.data ?? []).map(p => [p.id, p]))
     const ssns = new Map((ssnRes.data ?? []).map(s => [s.user_id, s]))
     setQueue(rows.map(s => {
       const pr = profs.get(s.user_id) as {
-        full_name: string | null; display_name: string | null; email: string | null; date_of_birth: string | null
+        full_name: string | null; display_name: string | null; date_of_birth: string | null
         address: string | null; city: string | null; state: string | null; address_zip: string | null
       } | undefined
       return {
         id: s.id, user_id: s.user_id, created_at: s.created_at,
         full_name: pr?.full_name ?? null,
         display_name: pr?.display_name ?? null,
-        email: pr?.email ?? null,
         date_of_birth: pr?.date_of_birth ?? null,
         address: pr?.address ?? null,
         city: pr?.city ?? null,
@@ -140,14 +122,13 @@ export default function AdminKyc() {
       .eq('id', sub.user_id)
     setBusyId(null)
     if (e2) { setError(e2.message); return }
-    pingWorkline()
     setOpen(null)
     await loadQueue()
   }
 
   const needle = q.trim().toLowerCase()
   const shown = needle
-    ? queue.filter(x => [x.full_name, x.display_name, x.email].some(v => (v ?? '').toLowerCase().includes(needle)))
+    ? queue.filter(x => [x.full_name, x.display_name].some(v => (v ?? '').toLowerCase().includes(needle)))
     : queue
 
   return (
@@ -163,7 +144,7 @@ export default function AdminKyc() {
       ) : (
         <div className="flex flex-col gap-3">
           {shown.map(sub => (
-            <div key={sub.id} id={`f-${sub.user_id}`}><Card className="p-4">
+            <Card key={sub.id} className="p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <span className="flex items-center gap-2">
@@ -172,7 +153,6 @@ export default function AdminKyc() {
                       <span className="rounded-full border border-petrol/30 bg-petrol/5 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-petrol">Enhanced</span>
                     )}
                   </span>
-                  <p className="mt-0.5 break-all font-mono text-xs text-muted">{sub.email ?? '—'}</p>
                   <p className="mt-0.5 font-mono text-xs text-faint">
                     {sub.kind === 'enhanced' && sub.ssn_full
                       ? <>SSN {sub.ssn_full.slice(0, 3)}-{sub.ssn_full.slice(3, 5)}-{sub.ssn_full.slice(5)}</>
@@ -210,7 +190,7 @@ export default function AdminKyc() {
                     ))}
                 </div>
               )}
-            </Card></div>
+            </Card>
           ))}
         </div>
       )}

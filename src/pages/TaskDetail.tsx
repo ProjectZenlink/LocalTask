@@ -4,13 +4,14 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import type { Task, TaskSubmission } from '../types/database'
 import { waLink, tgLink, xLink } from '../lib/format'
-import { PP, PP_KEY } from '../lib/brand'
 import { payoutLabel } from '../types/database'
 import {
-  money, usd, lt, taskMoney, dateShort, dateTimeShort, txUrl, shortHash,
+  usd, lt, taskMoney, dateShort, dateTimeShort, txUrl, shortHash,
   safeFileName, fileNameFromPath, isImagePath, signTaskFiles, openSigned,
 } from '../lib/format'
-import { PageHeading, Card, Button, Alert, SectionTitle, TaskBadge, Textarea, Label, Linkified, Input } from '../components/ui'
+import { PageHeading, Card, Button, Alert, SectionTitle, TaskBadge, Label, Linkified } from '../components/ui'
+import { Rise, CountUp, CheckDraw } from '../components/motionKit'
+import { SkeletonPage } from '../components/Skeleton'
 import { useI18n } from '../lib/i18n'
 
 type Signed = { path: string; url: string }
@@ -28,26 +29,18 @@ const COPY = {
     amNote: 'Questions about the brief, deadline, or payment? Message them directly.',
     revision: 'Revision requested.', revisionFallback: 'See your account manager for details.',
     submitRevision: (v: number) => `Submit revision (v${v})`, submitWork: 'Submit your work',
-    credLogin: 'Account (login / email) — required', credPwd: 'Account password — required',
-    errCred: 'Enter the account login and password you opened for this task.',
-    notesLabel: 'Notes, links, completion codes',
-    notesPh: 'Describe what you did, paste links or codes the reviewer needs…',
-    filesLabel: 'Attachments (screenshots, files)',
-    errEmpty: 'Add a note or attach at least one file.',
+    filesLabel: 'Screenshots (required)',
+    errEmpty: 'Upload at least one screenshot.',
     submitting: 'Submitting…', submitCta: 'Submit for review',
-    underReview: (v: string) => `Submitted${v} — your work is being reviewed against the acceptance criteria.`,
+    underReview: (v: string) => `Submitted${v} · our turn — reviewing against the criteria.`,
     approved: 'Approved',
-    passed1: (v: string) => `Your work passed review — your ${v} are unlocked. The client has been asked to send`,
-    passedPp: `directly to your ${PP}:`, passedWallet: 'directly to your wallet:',
-    ethEquiv: (u: string) => `the equivalent of ${u} in ETH`,
-    confirmLater: "You'll confirm here once the payment lands.",
-    reported: 'The client reports payment sent',
-    refWord: 'reference', txWord: 'transaction',
-    checkPp: `Check your ${PP}.`, checkWallet: 'Check your wallet.',
-    checkTail: "If the funds arrived, confirm below to close the task. If not, don't confirm — message your account manager instead.",
-    received: 'I received the payment',
+    intoWallet: 'added to your withdrawable balance.',
+    goWallet: 'Go to wallet \u2192',
+    reported: 'Payment sent',
+    refWord: 'ref',
+    confirmInWallet: 'Confirm receipt in your wallet — the whole request closes at once.',
     completed: 'Completed',
-    paidWord: 'Paid', viaPp: (u: string) => `${u} via ${PP}`, settled: 'settled',
+    paidWord: 'Paid', viaPp: (u: string) => `${u} via PayPal`, settled: 'settled',
     ref: 'ref', confirmedAt: 'confirmed',
     cancelled: 'This task was cancelled', cancelTail: 'Your account manager will follow up about any work already done.',
     history: 'Submission history', reviewer: 'Reviewer:',
@@ -64,26 +57,18 @@ const COPY = {
     amNote: '关于任务、截止时间或付款有问题？直接给他发消息。',
     revision: '需要返修。', revisionFallback: '详情请联系账户经理。',
     submitRevision: (v: number) => `提交返修版（v${v}）`, submitWork: '提交你的工作',
-    credLogin: '账号(登录名/邮箱)——必填', credPwd: '账号密码——必填',
-    errCred: '请填写本单开出来的账号和密码。',
-    notesLabel: '备注、链接、完成码',
-    notesPh: '描述你做了什么，粘贴审核需要的链接或完成码…',
-    filesLabel: '附件（截图、文件）',
-    errEmpty: '请填写备注或至少附一个文件。',
+    filesLabel: '上传截图（必填）',
+    errEmpty: '请至少上传一张截图。',
     submitting: '提交中…', submitCta: '提交审核',
-    underReview: (v: string) => `已提交${v}，正在按验收标准审核。`,
+    underReview: (v: string) => `已提交${v} · 轮到我们——正在按验收标准审核。`,
     approved: '已通过',
-    passed1: (v: string) => `你的工作已通过审核，${v} 已解锁。客户已被要求把`,
-    passedPp: `直接付到你的 ${PP}：`, passedWallet: '直接付到你的钱包地址：',
-    ethEquiv: (u: string) => `等值 ${u} 的 ETH`,
-    confirmLater: '钱到账后你在这里确认。',
-    reported: '客户报告付款已发出',
-    refWord: '编号', txWord: '交易',
-    checkPp: `去 ${PP} 查一下。`, checkWallet: '去钱包查一下。',
-    checkTail: '钱到了就在下面确认并关闭任务；没到就先别确认，直接联系账户经理。',
-    received: '我收到钱了',
+    intoWallet: '已入可提现余额。',
+    goWallet: '去钱包 →',
+    reported: '付款已发出',
+    refWord: '编号',
+    confirmInWallet: '到钱包确认到账——整张工单一起关闭。',
     completed: '已完成',
-    paidWord: '已付', viaPp: (u: string) => `${u}（${PP}）`, settled: '已结清',
+    paidWord: '已付', viaPp: (u: string) => `${u}（PayPal）`, settled: '已结清',
     ref: '编号', confirmedAt: '确认于',
     cancelled: '这个任务已取消', cancelTail: '已完成的部分账户经理会跟进处理。',
     history: '提交记录', reviewer: '审核意见：',
@@ -125,9 +110,6 @@ export default function TaskDetail() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  const [content, setContent] = useState('')
-  const [acctLogin, setAcctLogin] = useState('')
-  const [acctPwd, setAcctPwd] = useState('')
   const [files, setFiles] = useState<File[]>([])
 
   const load = useCallback(async () => {
@@ -157,8 +139,7 @@ export default function TaskDetail() {
 
   async function submitWork() {
     if (!id || !user || !task) return
-    if (!acctLogin.trim() || !acctPwd.trim()) { setError(t.errCred); return }
-    if (!content.trim() && files.length === 0) { setError(t.errEmpty); return }
+    if (files.length === 0) { setError(t.errEmpty); return }
     setError(null); setBusy(true)
     try {
       const paths: string[] = []
@@ -171,13 +152,10 @@ export default function TaskDetail() {
       const { error: insErr } = await supabase.from('task_submissions').insert({
         task_id: id,
         freelancer_id: user.id,
-        content: content.trim() || null,
         attachment_paths: paths,
-        account_login: acctLogin.trim(),
-        account_password: acctPwd,
       })
       if (insErr) throw new Error(`[submission] ${insErr.message}`)
-      setContent(''); setFiles([]); setAcctLogin(''); setAcctPwd('')
+      setFiles([])
       await load()
     } catch (e) {
       setError(e instanceof Error ? e.message : JSON.stringify(e))
@@ -186,16 +164,7 @@ export default function TaskDetail() {
     }
   }
 
-  async function confirmReceipt() {
-    if (!id) return
-    setError(null); setBusy(true)
-    const { error: e } = await supabase.rpc('confirm_receipt', { p_task_id: id })
-    setBusy(false)
-    if (e) { setError(e.message); return }
-    await load()
-  }
-
-  if (!loaded) return <div className="text-muted">{t.loading}</div>
+  if (!loaded) return <SkeletonPage />
   if (!task) {
     return (
       <div className="mx-auto max-w-2xl">
@@ -211,13 +180,14 @@ export default function TaskDetail() {
 
   return (
     <div className="mx-auto max-w-2xl">
+      <Rise>
       <Link to="/tasks" className="mb-3 inline-block font-mono text-[11px] uppercase tracking-wider text-faint transition hover:text-ink">{t.back}</Link>
       <div className="mb-6 flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h1 className="font-display text-2xl font-medium tracking-tight text-ink">{task.title}</h1>
           <p className="mt-2 font-mono text-xs text-faint">
             {taskMoney(task.amount, task.payout_token)}
-            {task.payout_method === PP_KEY ? <> · {PP}</> : task.payout_network && task.payout_token && <> · {payoutLabel(task.payout_network, task.payout_token)}</>}
+            {task.payout_method === 'paypal' ? <> · PayPal</> : task.payout_network && task.payout_token && <> · {payoutLabel(task.payout_network, task.payout_token)}</>}
             {task.deadline && <> · {t.due} {dateShort(task.deadline)}</>}
           </p>
         </div>
@@ -288,21 +258,6 @@ export default function TaskDetail() {
       {mine && task.status === 'in_progress' && (
         <Card className="mb-5 p-5">
           <SectionTitle>{needsRevision ? t.submitRevision((latest?.version ?? 0) + 1) : t.submitWork}</SectionTitle>
-          <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <Label>{t.credLogin}</Label>
-              <Input value={acctLogin} onChange={e => setAcctLogin(e.target.value)} placeholder="name@gmail.com" className="font-mono" />
-            </div>
-            <div>
-              <Label>{t.credPwd}</Label>
-              <Input value={acctPwd} onChange={e => setAcctPwd(e.target.value)} className="font-mono" />
-            </div>
-          </div>
-          <div className="mb-4">
-            <Label>{t.notesLabel}</Label>
-            <Textarea rows={4} value={content} onChange={e => setContent(e.target.value)}
-              placeholder={t.notesPh} />
-          </div>
           <div className="mb-4">
             <Label>{t.filesLabel}</Label>
             <input
@@ -310,11 +265,13 @@ export default function TaskDetail() {
               onChange={e => setFiles(Array.from(e.target.files ?? []))}
               className="block w-full text-sm text-muted file:mr-3 file:rounded-lg file:border file:border-hair file:bg-surface file:px-3 file:py-2 file:font-display file:text-sm file:text-ink hover:file:bg-paper"
             />
-            {files.length > 0 && (
+            {files.length > 0 ? (
               <p className="mt-1.5 font-mono text-xs text-verified-text">{files.map(f => f.name).join(' · ')}</p>
+            ) : (
+              <p className="mt-1.5 text-xs text-faint">{t.errEmpty}</p>
             )}
           </div>
-          <Button onClick={submitWork} disabled={busy} className="w-full">
+          <Button onClick={submitWork} disabled={busy || files.length === 0} className="w-full">
             {busy ? t.submitting : t.submitCta}
           </Button>
         </Card>
@@ -328,43 +285,28 @@ export default function TaskDetail() {
       {/* ── Awaiting payment / paid ── */}
       {mine && task.status === 'pending_payment' && (
         <Card className="mb-5 border-verified-border bg-verified-bg p-5">
-          <SectionTitle>{t.approved}</SectionTitle>
           {!task.paid_at ? (
-            <>
-              <p className="text-sm leading-relaxed text-ink">
-                {t.passed1(lt(task.amount))}{' '}
-                <span className="font-mono">
-                  {task.payout_method === PP_KEY
-                    ? usd(task.amount)
-                    : task.payout_token === 'ETH' ? t.ethEquiv(usd(task.amount)) : money(task.amount, task.payout_token ?? 'USDT')}
-                </span>{' '}
-                {task.payout_method === PP_KEY ? t.passedPp : t.passedWallet}
-              </p>
-              <p className="mt-2 break-all font-mono text-xs text-ink">
-                {task.payout_method === PP_KEY ? task.payout_paypal_email : task.payout_address}
-              </p>
-              <p className="mt-3 text-xs text-muted">{t.confirmLater}</p>
-            </>
+            <div className="flex items-center gap-4">
+              <CheckDraw size={44} className="shrink-0 text-verified-text" />
+              <div className="min-w-0 flex-1">
+                <p className="font-display text-lg font-medium tracking-tight text-ink">
+                  {t.approved} · <CountUp value={Number(task.amount)} format={n => lt(n)} /> {t.intoWallet}
+                </p>
+                <Link to="/earnings"
+                  className="press mt-3 inline-block rounded-xl bg-petrol px-4 py-2 font-display text-sm font-medium tracking-tight text-paper transition hover:bg-petrol-hover">
+                  {t.goWallet}
+                </Link>
+              </div>
+            </div>
           ) : (
             <>
               <p className="text-sm leading-relaxed text-ink">
                 {t.reported}
-                {task.tx_hash && (task.payout_method === 'paypal' || !task.payout_network ? (
-                  <> — {t.refWord} <span className="font-mono text-ink">{shortHash(task.tx_hash)}</span></>
-                ) : (
-                  <> — {t.txWord}{' '}
-                    <a href={txUrl(task.payout_network, task.tx_hash)} target="_blank" rel="noreferrer"
-                      className="font-mono text-petrol underline underline-offset-2">{shortHash(task.tx_hash)}</a>
-                  </>
-                ))}.
+                {task.tx_hash && <> · {t.refWord} <span className="font-mono">{shortHash(task.tx_hash)}</span></>}
+                {task.payment_note && <> · {task.payment_note}</>}
               </p>
-              {task.payment_note && <p className="mt-2 text-sm text-muted">{task.payment_note}</p>}
-              <p className="mt-3 text-xs text-muted">
-                {task.payout_method === PP_KEY ? t.checkPp : t.checkWallet} {t.checkTail}
-              </p>
-              <Button onClick={confirmReceipt} disabled={busy} className="mt-4 w-full">
-                {busy ? t.working : t.received}
-              </Button>
+              <p className="mt-2 text-xs text-muted">{t.confirmInWallet}</p>
+              <Link to="/earnings" className="press mt-3 block rounded-xl bg-petrol px-4 py-2 text-center font-display text-sm font-medium tracking-tight text-paper transition hover:bg-petrol-hover">{t.goWallet}</Link>
             </>
           )}
         </Card>
@@ -375,7 +317,7 @@ export default function TaskDetail() {
         <Card className="mb-5 border-verified-border bg-verified-bg p-5">
           <SectionTitle>{t.completed}</SectionTitle>
           <p className="text-sm leading-relaxed text-ink">
-            {t.paidWord} {task.payout_method === PP_KEY ? t.viaPp(usd(task.amount)) : taskMoney(task.amount, task.payout_token)} · {lt(task.amount)} {t.settled}
+            {t.paidWord} {task.payout_method === 'paypal' ? t.viaPp(usd(task.amount)) : taskMoney(task.amount, task.payout_token)} · {lt(task.amount)} {t.settled}
             {task.tx_hash && (task.payout_method === 'paypal' || !task.payout_network ? (
               <> · {t.ref} <span className="font-mono">{shortHash(task.tx_hash)}</span></>
             ) : (
@@ -415,6 +357,7 @@ export default function TaskDetail() {
           ))}
         </Card>
       )}
+      </Rise>
     </div>
   )
 }

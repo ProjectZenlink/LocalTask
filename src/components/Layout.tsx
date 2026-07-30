@@ -1,18 +1,19 @@
-import { Link, NavLink, useNavigate } from 'react-router-dom'
+import { Link, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import { ListChecks, Wallet, UserRound, MessageSquare } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useProfile } from '../context/ProfileContext'
 import KycBanner from './KycBanner'
+import KycCongrats from './KycCongrats'
 import FreelancerBell from './FreelancerBell'
 import { supabase } from '../lib/supabase'
 import { ConfirmDialog } from './dialogs'
 import AmContactDock from './AmContactDock'
 import { useUnread } from './useUnread'
-import Milestone from './Milestone'
-import LogoMark from './LogoMark'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { I18nProvider, useI18n } from '../lib/i18n'
+import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
+import { EASE } from './motionKit'
 
 const COPY = {
   en: {
@@ -36,21 +37,9 @@ function LayoutInner({ children }: { children: ReactNode }) {
   const isAdmin = profile?.role === 'admin'
   const isAm = profile?.role === 'am'
   const unread = useUnread(!!session && !isAdmin && !isAm && !!profile && profile.role === 'user')
-  const [ciToast, setCiToast] = useState(false)
-  useEffect(() => {
-    if (!session || !profile || profile.role !== 'user') return
-    const ch = supabase.channel('ci-toast')
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'checkins' }, payload => {
-        const row = payload.new as { user_id: string; confirmed_at: string | null }
-        if (row.user_id === profile.id && row.confirmed_at) {
-          setCiToast(true)
-          setTimeout(() => setCiToast(false), 3200)
-        }
-      })
-      .subscribe()
-    return () => { void supabase.removeChannel(ch) }
-  }, [session, profile])
   const [askOut, setAskOut] = useState(false)
+  const { pathname } = useLocation()
+  const rm = useReducedMotion()
   const { lang, toggle } = useI18n()
   const t = COPY[lang]
 
@@ -70,7 +59,7 @@ function LayoutInner({ children }: { children: ReactNode }) {
     <div className="min-h-screen">
       <header className="sticky top-0 z-30 border-b border-hair bg-paper/95 backdrop-blur">
         <div className="mx-auto flex max-w-4xl items-center justify-between px-5 py-4">
-          <Link to="/" className="flex items-center gap-2.5 font-display text-lg font-medium tracking-tight text-ink"><LogoMark />LocalTask</Link>
+          <Link to="/" className="flex items-center gap-2.5 font-display text-lg font-medium tracking-tight text-ink"><img src="/logo.svg" alt="" className="h-6 w-6 rounded-md" />LocalTask</Link>
           <nav className="flex items-center gap-5 text-sm">
             <button onClick={toggle} className="font-mono text-[11px] uppercase tracking-wider text-faint transition hover:text-ink">
               {lang === 'en' ? '中文' : 'EN'}
@@ -114,9 +103,20 @@ function LayoutInner({ children }: { children: ReactNode }) {
 
       <main className={`mx-auto max-w-4xl px-5 py-8 sm:py-10 ${session && !isAdmin && !isAm ? 'pb-24 sm:pb-10' : ''}`}>
         {profile?.role === 'user' && profile.kyc_status === 'pending' && (
-          <div className="mb-5"><KycBanner /></div>
+          pathname !== '/tasks' && <div className="mb-5"><KycBanner /></div>
         )}
-        {children}
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={pathname}
+            initial={rm ? false : { opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={rm ? undefined : { opacity: 0, y: -6 }}
+            transition={{ duration: 0.22, ease: EASE }}
+          >
+            {children}
+          </motion.div>
+        </AnimatePresence>
+        <KycCongrats />
       </main>
 
       <ConfirmDialog
@@ -131,12 +131,6 @@ function LayoutInner({ children }: { children: ReactNode }) {
 
       {/* AM 联系浮窗:仅 freelancer 会话显示 */}
       {session && !isAdmin && !isAm && <AmContactDock />}
-      {session && !isAdmin && !isAm && <Milestone />}
-      {ciToast && (
-        <div className="ms-rise fixed left-1/2 top-4 z-50 -translate-x-1/2 rounded-full border border-verified-border bg-verified-bg px-4 py-2 font-mono text-xs text-verified-text shadow-sm">
-          ✓ Check-in confirmed · streak counted
-        </div>
-      )}
 
       {/* Mobile bottom tab bar */}
       {session && !isAdmin && !isAm && (

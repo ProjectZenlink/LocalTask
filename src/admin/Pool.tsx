@@ -18,7 +18,6 @@ const COPY = {
     assign: '派任务', assignTitle: '派任务给', pickTask: '选择任务(未指派)', noTasks: '没有未指派的任务。先去「任务」页新建。', send: '直接派任务', sent: '已派:', pause: '暂停', resume: '恢复', block: '封禁', unblock: '解封',
     paused: '已暂停', blocked: '已封禁', rejected: '已驳回', pauseHint: '暂停 = 不再收到 offer(可恢复);封禁 = 永久,仅用于欺诈。',
     empty: '还没有 freelancer 注册。', blockQ: '封禁是给欺诈用的,可靠性问题请用「暂停」。确认永久封禁?', dlgCancel: '取消', confirmBlock: '确认封禁',
-    fAll: '全部', fDone: 'KYC 已完成', fPending: 'KYC 待审核', fNone: '未做 KYC', noMatch: '没有匹配的人。',
   },
   en: {
     title: 'Pool', sub: 'Every freelancer: status, load, ratings, reliability.',
@@ -27,7 +26,6 @@ const COPY = {
     assign: 'Assign', assignTitle: 'Assign task to', pickTask: 'Pick a task (unassigned)', noTasks: 'No unassigned tasks. Create one on the Tasks page.', send: 'Assign now', sent: 'Assigned:', pause: 'Pause', resume: 'Resume', block: 'Block', unblock: 'Unblock',
     paused: 'Paused', blocked: 'Blocked', rejected: 'Rejected', pauseHint: 'Pause = no new offers (reversible); Block = permanent, fraud only.',
     empty: 'No freelancers yet.', blockQ: 'Blocking is for fraud — use Pause for reliability issues. Block permanently?', dlgCancel: 'Cancel', confirmBlock: 'Block',
-    fAll: 'All', fDone: 'KYC verified', fPending: 'KYC pending', fNone: 'No KYC', noMatch: 'No one matches.',
   },
 }
 
@@ -42,7 +40,6 @@ export default function AdminPool() {
   const [ams, setAms] = useState<Map<string, string>>(new Map())
   const amName = (id: string | null) => (id ? ams.get(id) ?? id.slice(0, 6) : '—')
   const [q, setQ] = useState('')
-  const [kf, setKf] = useState<'all' | 'verified' | 'pending' | 'none'>('all')
   const [error, setError] = useState<string | null>(null)
   const [pendTr, setPendTr] = useState<(AmTransfer & { fl: { display_name: string | null } | null })[]>([])
   const [trRejectId, setTrRejectId] = useState<string | null>(null)
@@ -106,37 +103,20 @@ export default function AdminPool() {
     await load()
   }
 
-  const searched = rows.filter(r => {
+  const filtered = rows.filter(r => {
     const s = q.trim().toLowerCase()
     if (!s) return true
     return (r.display_name ?? '').toLowerCase().includes(s) || (r.full_name ?? '').toLowerCase().includes(s) || (r.email ?? '').toLowerCase().includes(s)
   })
-  // KYC 筛选片:未做 = 从未提交 + 被驳回(表格里仍保留红色标记)
-  const kfMatch = (r: PoolRow, f: typeof kf) =>
-    f === 'all' ? true : f === 'none' ? (r.kyc_status === 'none' || r.kyc_status === 'rejected') : r.kyc_status === f
-  const counts = {
-    verified: searched.filter(r => kfMatch(r, 'verified')).length,
-    pending: searched.filter(r => kfMatch(r, 'pending')).length,
-    none: searched.filter(r => kfMatch(r, 'none')).length,
-  }
-  const filtered = searched.filter(r => kfMatch(r, kf))
 
   return (
     <div>
       <PageHeading sub={t.sub}>{t.title}</PageHeading>
       {error && <Alert tone="error">{error}</Alert>}
       {sentMsg && <Alert tone="success">{sentMsg}</Alert>}
-      <div className="mb-3 flex items-center justify-between gap-3">
+      <div className="mb-4 flex items-center justify-between gap-3">
         <div className="w-64"><Input value={q} onChange={e => setQ(e.target.value)} placeholder={t.search} className="py-1.5 text-sm" /></div>
         <p className="text-xs text-faint">{t.pauseHint}</p>
-      </div>
-      <div className="mb-4 flex flex-wrap gap-2">
-        {([['all', t.fAll, null], ['verified', t.fDone, counts.verified], ['pending', t.fPending, counts.pending], ['none', t.fNone, counts.none]] as const).map(([k, label, n]) => (
-          <button key={k} onClick={() => setKf(k)}
-            className={`rounded-full border px-3 py-1.5 font-mono text-[11px] uppercase tracking-wider transition ${kf === k ? 'border-petrol bg-petrol text-paper' : 'border-hair bg-white text-muted hover:text-ink'}`}>
-            {label}{n !== null ? ` · ${n}` : ''}
-          </button>
-        ))}
       </div>
 
       {pendTr.length > 0 && (
@@ -162,7 +142,7 @@ export default function AdminPool() {
 
       <Card className="overflow-x-auto">
         {filtered.length === 0 ? (
-          <p className="p-6 text-center text-sm text-faint">{rows.length === 0 ? t.empty : t.noMatch}</p>
+          <p className="p-6 text-center text-sm text-faint">{t.empty}</p>
         ) : (
           <table className="w-full border-collapse">
             <thead className="border-b border-hair">
@@ -196,7 +176,8 @@ export default function AdminPool() {
                     <div className="flex gap-2">
                       <Button
                         className="px-2.5 py-1 text-xs"
-                        disabled={r.kyc_status !== 'verified' || r.is_suspended || r.is_banned || r.is_rejected || !r.managed_by}
+                        disabled={r.kyc_status !== 'verified' || r.enhanced_kyc_status !== 'verified' || r.is_suspended || r.is_banned || r.is_rejected || !r.managed_by}
+                        title={r.enhanced_kyc_status !== 'verified' ? (lang === 'zh' ? '待 Enhanced KYC' : 'Enhanced KYC pending') : undefined}
                         onClick={() => void openAssign(r)}
                       >
                         {t.assign}

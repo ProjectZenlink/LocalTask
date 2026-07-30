@@ -1,4 +1,3 @@
-import { T_PP, T_SQ, T_WISE, T_AW, T_EF, T_SH, T_ET, T_AM, NET_USDT_TRON, NET_USDC_ETH, NET_ETH_ETH } from '../lib/brand'
 export type UserRole = 'user' | 'am' | 'admin' | 'pending'
 export type BonusState = 'locked' | 'requested' | 'paid'
 
@@ -10,6 +9,34 @@ export interface BonusGrant {
   state: BonusState
   tx_ref: string | null
   paid_at: string | null
+  created_at: string
+}
+export type PayoutRequestStatus = 'pending' | 'paid_pending_confirm' | 'completed' | 'rejected'
+export interface PayoutItem {
+  kind: 'task' | 'grant' | 'signup'
+  ref: string
+  amount: number
+  label: string
+}
+export interface PayoutRequest {
+  id: string
+  user_id: string
+  am_id: string | null
+  total: number
+  items: PayoutItem[]
+  status: PayoutRequestStatus
+  tx_ref: string | null
+  note: string | null
+  reject_reason: string | null
+  decided_by: string | null
+  decided_at: string | null
+  confirmed_at: string | null
+  payout_method: string | null
+  payout_network: string | null
+  payout_token: string | null
+  payout_address: string | null
+  payout_paypal_email: string | null
+  dest_snapshot_at: string | null
   created_at: string
 }
 export type KycStatus = 'none' | 'pending' | 'verified' | 'rejected'
@@ -26,7 +53,7 @@ export type PlatformType =
   | 'Ether.fi' | 'Shopify' | 'Etsy' | 'Amazon' | 'Other'
 /** 八项平台清单（AM 看板的八盏灯；不含「其他」） */
 export const PLATFORMS: PlatformType[] =
-  [T_PP, T_SQ, T_WISE, T_AW, T_EF, T_SH, T_ET, T_AM] as PlatformType[]
+  ['Paypal', 'Square', 'Wise', 'Airwallex', 'Ether.fi', 'Shopify', 'Etsy', 'Amazon']
 /** 建任务可选的全部类型 = 八项 + 其他 */
 export const TASK_TYPES: PlatformType[] = [...PLATFORMS, 'Other']
 
@@ -62,6 +89,7 @@ export interface Profile {
   signup_bonus_usd: number
   work_email: string | null
   work_email_password: string | null
+  avatar_path: string | null
   email: string | null
   enhanced_kyc_status: KycStatus
   signup_bonus_state: BonusState
@@ -148,9 +176,9 @@ export interface WalletOption {
 
 // The three supported payout combos (must match the DB check constraint)
 export const WALLET_OPTIONS: WalletOption[] = [
-  { key: 'usdt-tron', label: NET_USDT_TRON, network: 'tron', token: 'USDT', placeholder: 'T…', pattern: /^T[1-9A-HJ-NP-Za-km-z]{33}$/ },
-  { key: 'usdc-eth', label: NET_USDC_ETH, network: 'ethereum', token: 'USDC', placeholder: '0x…', pattern: /^0x[0-9a-fA-F]{40}$/ },
-  { key: 'eth-eth', label: NET_ETH_ETH, network: 'ethereum', token: 'ETH', placeholder: '0x…', pattern: /^0x[0-9a-fA-F]{40}$/ },
+  { key: 'usdt-tron', label: 'USDT · TRC20 (Tron)', network: 'tron', token: 'USDT', placeholder: 'T…', pattern: /^T[1-9A-HJ-NP-Za-km-z]{33}$/ },
+  { key: 'usdc-eth', label: 'USDC · Ethereum', network: 'ethereum', token: 'USDC', placeholder: '0x…', pattern: /^0x[0-9a-fA-F]{40}$/ },
+  { key: 'eth-eth', label: 'ETH · Ethereum', network: 'ethereum', token: 'ETH', placeholder: '0x…', pattern: /^0x[0-9a-fA-F]{40}$/ },
 ]
 
 export function walletOptionFor(network: ChainNetwork | null, token: TokenSymbol | null): WalletOption | undefined {
@@ -158,7 +186,7 @@ export function walletOptionFor(network: ChainNetwork | null, token: TokenSymbol
 }
 
 export function payoutLabel(network: ChainNetwork, token: TokenSymbol): string {
-  return walletOptionFor(network, token)?.label ?? `${token} \u00b7 ${network}`
+  return walletOptionFor(network, token)?.label ?? `${token} · ${network}`
 }
 
 export type KycDocType = 'id_front' | 'id_back' | 'address_proof' | 'selfie_handheld'
@@ -216,6 +244,7 @@ export interface PoolRow {
   managed_by: string | null
   is_rejected: boolean
   email: string | null
+  enhanced_kyc_status: KycStatus
 }
 
 export interface CommissionRate {
@@ -266,6 +295,8 @@ export interface AccountRecord {
   account_login: string | null
   account_password: string | null
   twofa: string | null
+  delete_requested_at: string | null
+  delete_requested_by: string | null
   status: 'active' | 'pending' | 'review' | 'closed'
   phone_number: string | null
   sms_link: string | null
@@ -342,22 +373,5 @@ export interface AmTransfer {
   review_note: string | null
   decided_by: string | null
   decided_at: string | null
-  created_at: string
-}
-
-export interface PayoutItem { kind: 'task' | 'grant' | 'signup'; ref: string; amount: number; label: string }
-export interface PayoutRequest {
-  id: string
-  user_id: string
-  am_id: string | null
-  total: number
-  items: PayoutItem[]
-  status: 'pending' | 'paid_pending_confirm' | 'completed' | 'rejected'
-  tx_ref: string | null
-  note: string | null
-  reject_reason: string | null
-  decided_by: string | null
-  decided_at: string | null
-  confirmed_at: string | null
   created_at: string
 }

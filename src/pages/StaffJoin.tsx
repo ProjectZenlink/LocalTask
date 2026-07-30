@@ -1,5 +1,4 @@
 import { useRef, useState } from 'react'
-import LogoMark from '../components/LogoMark'
 import { supabase } from '../lib/supabase'
 import { Card, Button, Field, Alert } from '../components/ui'
 import PasswordField from '../components/PasswordField'
@@ -51,7 +50,7 @@ export default function StaffJoin() {
     <div className="flex min-h-screen items-center justify-center bg-paper px-4">
       <div className="w-full max-w-sm">
         <div className="mb-6 flex items-center justify-center gap-2.5 font-display text-lg font-medium tracking-tight text-ink">
-          <LogoMark className="h-6 w-6 rounded-md" />
+          <img src="/logo.svg" alt="" className="h-6 w-6 rounded-md" />
           LocalTask <span className="font-mono text-[11px] uppercase tracking-[0.2em] text-petrol">员工注册</span>
         </div>
         <Card className="p-5">

@@ -6,7 +6,6 @@ import { usd, dateTimeShort } from '../lib/format'
 import { PageHeading, Card, Button, Alert, StatusBadge } from '../components/ui'
 import { Th, Td, PromptDialog, ConfirmDialog } from './bits'
 import { useLang } from './i18n'
-import { pingWorkline } from '../lib/workline'
 
 type Row = AcceptanceRow & {
   freelancer: { display_name: string | null } | null
@@ -89,7 +88,6 @@ export default function CommissionReview() {
     })
     setBusy(false)
     if (e) { setError(e.message); return }
-    pingWorkline()
     await load()
   }
 

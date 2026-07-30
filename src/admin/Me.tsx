@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { PageHeading, Card, Button, Alert, Field } from '../components/ui'
+import AvatarUpload from '../components/AvatarUpload'
 import { useLang } from './i18n'
 
 const COPY = {
@@ -16,14 +17,19 @@ export default function AdminMe() {
   const t = COPY[lang]
   const { user } = useAuth()
   const [name, setName] = useState('')
+  const [avatarPath, setAvatarPath] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!user) return
-    supabase.from('profiles').select('display_name').eq('id', user.id).maybeSingle()
-      .then(({ data }) => setName((data as { display_name: string | null } | null)?.display_name ?? ''))
+    supabase.from('profiles').select('display_name, avatar_path').eq('id', user.id).maybeSingle()
+      .then(({ data }) => {
+        const d = data as { display_name: string | null; avatar_path: string | null } | null
+        setName(d?.display_name ?? '')
+        setAvatarPath(d?.avatar_path ?? null)
+      })
   }, [user])
 
   async function save() {
@@ -41,6 +47,12 @@ export default function AdminMe() {
       <PageHeading sub={t.sub}>{t.title}</PageHeading>
       {error && <Alert tone="error">{error}</Alert>}
       <Card className="p-5">
+        {user && (
+          <div className="mb-4 border-b border-hair pb-4">
+            <AvatarUpload uid={user.id} name={name || (user.email ?? null)} path={avatarPath} lang={lang}
+              onChanged={p => setAvatarPath(p)} />
+          </div>
+        )}
         <div className="mb-4 flex items-start justify-between gap-4">
           <span className="shrink-0 font-mono text-[11px] uppercase tracking-wider text-faint">{t.email}</span>
           <span className="break-all text-right font-mono text-xs text-ink">{user?.email}</span>

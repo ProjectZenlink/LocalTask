@@ -5,17 +5,13 @@ import { useI18n } from '../lib/i18n'
 
 const COPY = {
   en: {
-    pending1: 'Your identity documents are under review — usually 1–2 business days.',
-    pending2: 'Need it faster?',
-    pendingLink: 'Please contact customer support.',
+    pending1: 'Identity in review · usually 1–2 business days · rushing? Contact support (bottom right).',
     rejected: 'Your verification was rejected. Please submit new documents to receive tasks. ',
     none: 'Verify your identity to start receiving tasks. ',
     resubmit: 'Resubmit documents', start: 'Start verification',
   },
   zh: {
-    pending1: '你的身份材料正在审核，通常需要 1–2 个工作日。',
-    pending2: '想加急？',
-    pendingLink: '请联系客服。',
+    pending1: '身份审核中 · 通常 1–2 个工作日 · 加急点右下角客服。',
     rejected: '你的身份验证被驳回。请重新提交材料后才能接任务。',
     none: '完成身份验证后才能接任务。',
     resubmit: '重新提交材料', start: '开始验证',
@@ -31,10 +27,7 @@ export default function KycBanner() {
 
   if (profile.kyc_status === 'pending') {
     return (
-      <Alert tone="info">
-        {t.pending1}{' '}
-        {t.pending2}{' '}{t.pendingLink}
-      </Alert>
+      <Alert tone="info">{t.pending1}</Alert>
     )
   }
   return (

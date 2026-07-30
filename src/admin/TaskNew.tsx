@@ -1,7 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { PP, PP_TASK, WISE_T, RATE_WISE_PRE, RATE_WISE_WITH, PP_KEY } from '../lib/brand'
 import { useAuth } from '../context/AuthContext'
 import type { AccountManager, PoolRow, PlatformType } from '../types/database'
 import { TASK_TYPES } from '../types/database'
@@ -14,10 +13,10 @@ const COPY = {
   zh: {
     title: '新建任务', sub: '账户经理和验收标准是必填 —— 验收标准是之后审核和裁决的唯一依据。金额一律美元,freelancer 用自己设置的钱包收款。',
     client: '账户经理(负责本任务)', clientNone: '还没有账户经理。先去', clientLink: 'AM 页', clientNone2: '建一个。',
-    taskTitle: '任务标题', taskType: '任务类型', typeNone: '— 不设类型 —', tags: '标签(可选,回车或逗号添加,如收款平台)', desc: '任务说明(可贴链接,freelancer 端可点击)',
-    files: '附件(二维码图片、素材等,可多选)', criteria: '验收标准(必填,一行一条)',
+    taskTitle: '任务标题', taskType: '任务类型', typeNone: '— 不设类型 —', tags: '标签(可选,回车或逗号添加,如 Paypal)', desc: '任务说明(可贴链接,freelancer 端可点击)',
+    files: '附件(二维码图片、素材等,可多选)', filesHint: '点击选择、拖入文件,或截图后直接 Ctrl+V 粘贴', criteria: '验收标准(必填,一行一条)',
     amount: '金额(美元;1 LT Coin = $1)', deadline: '截止时间(可选)',
-    assignee: '直接派给(可选,立即开工)', assigneeNone: '先不指派',
+    assignee: '直接派给(可选,立即开工)', assigneeNone: '先不指派', needEnh: '待 Enhanced KYC',
     noWallet: '未设收款', create: '创建任务', creating: '创建中…',
     back: '← 任务列表', vClient: '请选择账户经理。', vTitle: '请填任务标题。', vCriteria: '验收标准必填。', vAmount: '金额需大于 0。',
     offerFail: '任务已创建,但派发失败:',
@@ -27,15 +26,23 @@ const COPY = {
   en: {
     title: 'New task', sub: 'Account manager and acceptance criteria are required — the criteria are the only basis for review and disputes. Amounts are in USD; freelancers receive to their own wallet.',
     client: 'Account manager (owns this task)', clientNone: 'No account managers yet. Create one on the', clientLink: 'AMs page', clientNone2: 'first.',
-    taskTitle: 'Title', taskType: 'Task type', typeNone: '— No type —', tags: 'Tags (optional — Enter or comma to add, e.g. a payout brand)', desc: 'Description (links are clickable on the freelancer side)',
-    files: 'Attachments (QR images, assets — multiple allowed)', criteria: 'Acceptance criteria (required, one per line)',
+    taskTitle: 'Title', taskType: 'Task type', typeNone: '— No type —', tags: 'Tags (optional — Enter or comma to add, e.g. Paypal)', desc: 'Description (links are clickable on the freelancer side)',
+    files: 'Attachments (QR images, assets — multiple allowed)', filesHint: 'Click to browse, drag files in, or paste a screenshot (Ctrl+V)', criteria: 'Acceptance criteria (required, one per line)',
     amount: 'Amount (USD; 1 LT Coin = $1)', deadline: 'Deadline (optional)',
-    assignee: 'Assign directly to (optional — starts immediately)', assigneeNone: "Don't assign yet",
+    assignee: 'Assign directly to (optional — starts immediately)', assigneeNone: "Don't assign yet", needEnh: 'Enhanced KYC pending',
     noWallet: 'no payout yet', create: 'Create task', creating: 'Creating…',
     back: '← All tasks', vClient: 'Pick an account manager.', vTitle: 'Enter a title.', vCriteria: 'Acceptance criteria are required.', vAmount: 'Amount must be greater than 0.',
     offerFail: 'Task created, but assignment failed: ',
     override: 'Commission override (optional, USD)', overrideHint: 'Blank = use rate table; applies to this task only.',
     otherHint: '"Other" skips the 8-item checklist; commission = override → sub-rate → "Other" rate → 0.', itemNone: '— No sub-rate —',
+  },
+}
+
+/** v53(R3):任务类型模板 — 选中类型时只填空白字段,已有内容不覆盖。后续平台文案到位后逐个补充。 */
+const TEMPLATES: Partial<Record<PlatformType, { tags?: string[]; description?: string; criteria?: string }>> = {
+  Paypal: {
+    tags: ['Paypal'],
+    criteria: '1) You need to be in a well-lit area.\n2) You need to provide accurate information.\n3) If any of the information is incorrect, you will not receive the bonus.',
   },
 }
 
@@ -58,16 +65,16 @@ export default function AdminTaskNew({ amScope = null }: { amScope?: AccountMana
   const [tagDraft, setTagDraft] = useState('')
   const [typeSel, setTypeSel] = useState<'' | PlatformType>('')
 
-  // 双价(m20):选了对应类型且有指派对象时,按 TA 是否已有前置账号自动带价(可手改)
+  // Wise 双价(m20):选了 Wise 且选了指派对象时,按 TA 有无「注册成功的 PayPal 账号」自动带价(可手改)
   useEffect(() => {
-    if (typeSel !== WISE_T || !assignee) return
+    if (typeSel !== 'Wise' || !assignee) return
     let on = true
     void (async () => {
       const { data } = await supabase.from('account_records').select('id')
-        .eq('freelancer_id', assignee).eq('task_type', PP_TASK).eq('status', 'active').limit(1)
+        .eq('freelancer_id', assignee).eq('task_type', 'Paypal').eq('status', 'active').limit(1)
       if (!on) return
       const hasPp = ((data ?? []) as { id: string }[]).length > 0
-      const wanted = hasPp ? RATE_WISE_WITH : RATE_WISE_PRE
+      const wanted = hasPp ? 'wise (with paypal)' : 'wise (pre-paypal)'
       const item = rateItems.find(r => r.label.toLowerCase() === wanted)
       setAmount(String(item?.amount ?? (hasPp ? 10 : 5)))
     })()
@@ -75,6 +82,29 @@ export default function AdminTaskNew({ amScope = null }: { amScope?: AccountMana
   }, [typeSel, assignee, rateItems])
   const [desc, setDesc] = useState('')
   const [files, setFiles] = useState<File[]>([])
+  const fileInput = useRef<HTMLInputElement>(null)
+  const addFiles = useCallback((incoming: FileList | File[] | null) => {
+    if (!incoming) return
+    const arr = Array.from(incoming).map(f =>
+      f.name === 'image.png' || f.name === 'image.jpg' || f.name === 'image.jpeg'
+        ? new File([f], `paste-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.${f.type.split('/')[1] ?? 'png'}`, { type: f.type })
+        : f)
+    setFiles(prev => {
+      const seen = new Set(prev.map(f => `${f.name}|${f.size}`))
+      return [...prev, ...arr.filter(f => !seen.has(`${f.name}|${f.size}`))]
+    })
+  }, [])
+  const removeFile = (i: number) => setFiles(prev => prev.filter((_, x) => x !== i))
+  const previews = useMemo(() => files.map(f => (f.type.startsWith('image/') ? URL.createObjectURL(f) : null)), [files])
+  useEffect(() => () => { previews.forEach(u => { if (u) URL.revokeObjectURL(u) }) }, [previews])
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const fs = e.clipboardData?.files
+      if (fs && fs.length > 0) { e.preventDefault(); addFiles(fs) }
+    }
+    window.addEventListener('paste', onPaste)
+    return () => window.removeEventListener('paste', onPaste)
+  }, [addFiles])
   const [criteria, setCriteria] = useState('')
   const [amount, setAmount] = useState('')
   const [override, setOverride] = useState('')
@@ -203,7 +233,16 @@ export default function AdminTaskNew({ amScope = null }: { amScope?: AccountMana
 
         <div className="mb-4">
           <Label>{t.taskType}</Label>
-          <select value={typeSel} onChange={e => setTypeSel(e.target.value as '' | PlatformType)} className={selectCls}>
+          <select value={typeSel} onChange={e => {
+            const v = e.target.value as '' | PlatformType
+            setTypeSel(v)
+            const tpl = v ? TEMPLATES[v] : undefined
+            if (tpl) {
+              if (tpl.tags && tags.length === 0) setTags(tpl.tags)
+              if (tpl.description && !desc.trim()) setDesc(tpl.description)
+              if (tpl.criteria && !criteria.trim()) setCriteria(tpl.criteria)
+            }
+          }} className={selectCls}>
             <option value="">{t.typeNone}</option>
             {TASK_TYPES.map(p => <option key={p} value={p}>{typeLabel(p, lang)}</option>)}
           </select>
@@ -230,7 +269,7 @@ export default function AdminTaskNew({ amScope = null }: { amScope?: AccountMana
               if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addTags(tagDraft) }
             }}
             onBlur={() => addTags(tagDraft)}
-            placeholder={PP}
+            placeholder="Paypal"
           />
           {tags.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1.5">
@@ -248,9 +287,32 @@ export default function AdminTaskNew({ amScope = null }: { amScope?: AccountMana
 
         <div className="mb-4">
           <Label>{t.files}</Label>
-          <input type="file" multiple onChange={e => setFiles(Array.from(e.target.files ?? []))}
-            className="block w-full text-sm text-muted file:mr-3 file:rounded-lg file:border file:border-hair file:bg-white file:px-3 file:py-2 file:font-display file:text-sm file:text-ink hover:file:bg-paper" />
-          {files.length > 0 && <p className="mt-1.5 font-mono text-xs text-verified-text">{files.map(f => f.name).join(' · ')}</p>}
+          <div
+            onClick={() => fileInput.current?.click()}
+            onDragOver={e => { e.preventDefault() }}
+            onDrop={e => { e.preventDefault(); addFiles(e.dataTransfer.files) }}
+            className="flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-hair bg-white px-4 py-6 text-center transition hover:border-petrol/50 hover:bg-paper"
+          >
+            <span className="flex h-8 w-8 items-center justify-center rounded-full border border-hair font-display text-lg leading-none text-muted">+</span>
+            <span className="text-xs text-faint">{t.filesHint}</span>
+          </div>
+          <input ref={fileInput} type="file" multiple className="hidden"
+            onChange={e => { addFiles(e.target.files); e.target.value = '' }} />
+          {files.length > 0 && (
+            <div className="mt-2.5 flex flex-wrap gap-2.5">
+              {files.map((f, i) => (
+                <div key={`${f.name}-${i}`} className="relative">
+                  {previews[i] ? (
+                    <img src={previews[i]!} alt="" className="h-16 w-16 rounded-lg border border-hair object-cover" />
+                  ) : (
+                    <span className="flex h-16 w-24 items-center justify-center overflow-hidden rounded-lg border border-hair bg-paper px-2 font-mono text-[10px] text-muted">{f.name}</span>
+                  )}
+                  <button type="button" onClick={() => removeFile(i)}
+                    className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full border border-hair bg-white font-mono text-[10px] text-muted shadow-sm transition hover:text-danger-text">×</button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="mb-4"><Label>{t.criteria}</Label><Textarea rows={4} value={criteria} onChange={e => setCriteria(e.target.value)} placeholder={'1) …\n2) …'} /></div>
@@ -279,9 +341,10 @@ export default function AdminTaskNew({ amScope = null }: { amScope?: AccountMana
           <select value={assignee} onChange={e => setAssignee(e.target.value)} className={selectCls}>
             <option value="">{t.assigneeNone}</option>
             {pool.map(p => (
-              <option key={p.id} value={p.id}>
+              <option key={p.id} value={p.id} disabled={p.enhanced_kyc_status !== 'verified'}>
                 {p.display_name ?? p.id.slice(0, 8)}
-                {p.payout_method === PP_KEY ? ` · ${PP}`
+                {p.enhanced_kyc_status !== 'verified' ? ` · ${t.needEnh}`
+                  : p.payout_method === 'paypal' ? ' · PayPal'
                   : p.payout_network && p.payout_token ? ` · ${payoutLabel(p.payout_network, p.payout_token)}` : ` · ${t.noWallet}`}
               </option>
             ))}

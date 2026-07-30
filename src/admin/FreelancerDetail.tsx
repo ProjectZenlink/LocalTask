@@ -6,7 +6,6 @@ import { useAuth } from '../context/AuthContext'
 import type { Profile, PoolRow, FreelancerCompany, AccountManager, AccountRecord, BonusGrant, ProfileChangeRequest, AmTransfer } from '../types/database'
 import { payoutLabel } from '../types/database'
 import { usd, dateShort, dateTimeShort, waLink, tgLink, xLink, signFiles, safeFileName, fileNameFromPath, isImagePath, openSigned, bjDay } from '../lib/format'
-import { PP, PP_KEY, pick, K_PAYOUT_PP_EMAIL } from '../lib/brand'
 import { PageHeading, Card, Button, Alert, StatusBadge, SectionTitle, Field, Label, Input } from '../components/ui'
 import SecretText from '../components/SecretText'
 import RiskFlags from '../components/RiskFlags'
@@ -28,14 +27,14 @@ const COPY = {
     back: '← 人才库', notFound: '未找到该 freelancer',
     basics: '基本资料', legal: '法定姓名', regEmail: '注册邮箱', dob: '出生日期', addr: '地址', ssn: 'SSN', only4: '仅后四位', joined: '注册',
     workT: '工作邮箱', workEmail: '邮箱地址', workPwd: '邮箱密码', workHint: '由 AM 注册并维护;freelancer 端只读展示。', workSave: '保存', workSaved: '已保存 ✓',
-    enhKyc: 'Enhanced KYC', bonusT: '注册奖励', bonusState: '状态', streakT: '签到奖励', streakEmpty: '还没有解锁任何签到奖励。',
+    enhKyc: 'Enhanced KYC', rewardsT: '奖励', signupRow: '注册奖励', streakEmpty: '还没有解锁任何签到奖励。',
     pcrT: '待审的资料修改', pcrOld: '现值', pcrNew: '申请值', pcrApprove: '批准', pcrRejectBtn: '驳回', pcrRejectQ: '驳回备注(可选):',
-    trT: '归属转移', trBtn: '转移给同事', trTarget: '目标 AM', trReason: '理由(可选)', trSubmit: '提交', trClose: '取消',
-    trPending: '转移申请待 admin 审核', trCancel: '撤回', trHist: '转移记录', trNone: '—',
+    trBtn: '转移给同事', trTarget: '目标 AM', trReason: '理由(可选)', trSubmit: '提交', trClose: '取消',
+    trPending: '转移申请待 admin 审核', trCancel: '撤回',
     ciToday: '今日签到', ciNone: '未签到', ciPending: '确认签到', ciDone: '已复核 ✓',
     sk7: '连续签到 7 天', sk15: '连续签到 15 天', sk30: '连续签到 30 天',
     bLocked: '未解锁(待 Enhanced KYC)', bReady: '可提现(等 freelancer 申请)', bRequested: '已申请提现', bPaid: '已打款',
-    bTxRef: '打款凭证号(可选)', bMark: '标记已打款', bMarked: '已记录 ✓', bPaidAt: '打款时间',
+    bTxRef: '打款凭证号(可选)', bMark: '标记已打款', bMarked: '已记录 ✓', bPaidAt: '打款时间', bGoPayout: '提现在「提现」工单页统一处理 →',
     ssnShow: '显示完整', ssnHide: '隐藏',
     contact: '联系方式', wallet: '收款钱包', noWallet: '未设置', riskT: '风险扫描(全库比对)',
     load: '负载', active: '活跃任务', done: '已完成',
@@ -57,14 +56,14 @@ const COPY = {
     back: '← Pool', notFound: 'Freelancer not found',
     basics: 'Basics', legal: 'Legal name', regEmail: 'Account email', dob: 'Date of birth', addr: 'Address', ssn: 'SSN', only4: 'last 4 only', joined: 'Joined',
     workT: 'Work email', workEmail: 'Email address', workPwd: 'Email password', workHint: 'Registered and managed by the AM; read-only on the freelancer side.', workSave: 'Save', workSaved: 'Saved ✓',
-    enhKyc: 'Enhanced KYC', bonusT: 'Signup bonus', bonusState: 'State', streakT: 'Streak rewards', streakEmpty: 'No streak rewards unlocked yet.',
+    enhKyc: 'Enhanced KYC', rewardsT: 'Rewards', signupRow: 'Signup bonus', streakEmpty: 'No streak rewards unlocked yet.',
     pcrT: 'Pending profile change', pcrOld: 'Current', pcrNew: 'Requested', pcrApprove: 'Approve', pcrRejectBtn: 'Reject', pcrRejectQ: 'Rejection note (optional):',
-    trT: 'Ownership transfer', trBtn: 'Transfer to a colleague', trTarget: 'Target AM', trReason: 'Reason (optional)', trSubmit: 'Submit', trClose: 'Cancel',
-    trPending: 'Transfer pending admin review', trCancel: 'Withdraw', trHist: 'Transfer history', trNone: '—',
+    trBtn: 'Transfer to a colleague', trTarget: 'Target AM', trReason: 'Reason (optional)', trSubmit: 'Submit', trClose: 'Cancel',
+    trPending: 'Transfer pending admin review', trCancel: 'Withdraw',
     ciToday: "Today's check-in", ciNone: 'Not checked in', ciPending: 'Confirm', ciDone: 'Confirmed ✓',
     sk7: '7-day streak', sk15: '15-day streak', sk30: '30-day streak',
     bLocked: 'Locked (Enhanced KYC pending)', bReady: 'Withdrawable (awaiting request)', bRequested: 'Payout requested', bPaid: 'Paid',
-    bTxRef: 'Payment reference (optional)', bMark: 'Mark as paid', bMarked: 'Recorded ✓', bPaidAt: 'Paid at',
+    bTxRef: 'Payment reference (optional)', bMark: 'Mark as paid', bMarked: 'Recorded ✓', bPaidAt: 'Paid at', bGoPayout: 'Handled on the Payouts page →',
     ssnShow: 'Show full', ssnHide: 'Hide',
     contact: 'Contact', wallet: 'Payout wallet', noWallet: 'Not set', riskT: 'Risk scan (whole-DB)',
     load: 'Load', active: 'Active tasks', done: 'Completed',
@@ -109,6 +108,30 @@ function DocGrid({ files }: { files: Signed[] }) {
   )
 }
 
+const STREAK_TIERS = [
+  { d: 7, a: 4.99 },
+  { d: 15, a: 7.99 },
+  { d: 30, a: 15.99 },
+]
+
+/** 连续已复核天数:锚在今天或昨天中最近的已复核日,与数据库 confirm_checkin 口径一致。 */
+function calcStreak(daysDesc: string[], today: string): number {
+  if (daysDesc.length === 0) return 0
+  const prev = (d: string) => {
+    const x = new Date(d + 'T00:00:00Z')
+    x.setUTCDate(x.getUTCDate() - 1)
+    return x.toISOString().slice(0, 10)
+  }
+  const anchor = daysDesc[0] === today ? today : daysDesc[0] === prev(today) ? prev(today) : null
+  if (!anchor) return 0
+  let n = 0
+  let cur = anchor
+  for (const d of daysDesc) {
+    if (d === cur) { n += 1; cur = prev(cur) } else if (d < cur) break
+  }
+  return n
+}
+
 export default function FreelancerDetail({ amScope = null }: { amScope?: AccountManager | null }) {
   const { lang } = useLang()
   const t = COPY[lang]
@@ -124,13 +147,9 @@ export default function FreelancerDetail({ amScope = null }: { amScope?: Account
   const [wPwd, setWPwd] = useState('')
   const [wBusy, setWBusy] = useState(false)
   const [wMsg, setWMsg] = useState<string | null>(null)
-  const [bTx, setBTx] = useState('')
-  const [bBusy, setBBusy] = useState(false)
-  const [bMsg, setBMsg] = useState<string | null>(null)
   const [grants, setGrants] = useState<BonusGrant[]>([])
-  const [gTx, setGTx] = useState<Record<string, string>>({})
-  const [gBusy, setGBusy] = useState<string | null>(null)
   const [ciState, setCiState] = useState<'none' | 'pending' | 'confirmed'>('none')
+  const [stkDays, setStkDays] = useState(0)
   const [pcr, setPcr] = useState<ProfileChangeRequest | null>(null)
   const [pcrBusy, setPcrBusy] = useState(false)
   const [pcrRejectOpen, setPcrRejectOpen] = useState(false)
@@ -156,19 +175,8 @@ export default function FreelancerDetail({ amScope = null }: { amScope?: Account
     setTimeout(() => setWMsg(null), 2500)
   }
 
-  async function markPaid() {
-    if (!p) return
-    setBBusy(true); setBMsg(null)
-    const { error: e } = await supabase.from('profiles')
-      .update({ signup_bonus_state: 'paid', bonus_tx_ref: bTx.trim() || null, bonus_paid_at: new Date().toISOString() })
-      .eq('id', p.id)
-    setBBusy(false)
-    if (e) { setError(e.message); return }
-    setBMsg(t.bMarked)
-    await load()
-  }
-
   const amName2 = (aid: string) => amMap.get(aid) ?? aid.slice(0, 6)
+  const pendingTr = transfers.find(x => x.status === 'pending') ?? null
 
   async function decidePcr(approve: boolean, note?: string) {
     if (!pcr) return
@@ -206,15 +214,6 @@ export default function FreelancerDetail({ amScope = null }: { amScope?: Account
     await load()
   }
 
-  async function markGrantPaid(gid: string) {
-    setGBusy(gid)
-    const { error: e } = await supabase.from('bonus_grants')
-      .update({ state: 'paid', tx_ref: (gTx[gid] ?? '').trim() || null, paid_at: new Date().toISOString() })
-      .eq('id', gid)
-    setGBusy(null)
-    if (e) { setError(e.message); return }
-    await load()
-  }
   const [subs, setSubs] = useState<KycSub[]>([])
   const [companies, setCompanies] = useState<FreelancerCompany[]>([])
   const [ams, setAms] = useState<AccountManager[]>([])
@@ -261,9 +260,12 @@ export default function FreelancerDetail({ amScope = null }: { amScope?: Account
     setSubs((ks.data ?? []) as KycSub[])
     const { data: gr } = await supabase.from('bonus_grants').select('*').eq('user_id', id).order('created_at')
     setGrants((gr ?? []) as BonusGrant[])
-    const { data: ciRow } = await supabase.from('checkins').select('confirmed_at')
-      .eq('user_id', id).eq('day', bjToday).maybeSingle()
-    setCiState(!ciRow ? 'none' : (ciRow as { confirmed_at: string | null }).confirmed_at ? 'confirmed' : 'pending')
+    const { data: ciRows } = await supabase.from('checkins').select('day, confirmed_at')
+      .eq('user_id', id).order('day', { ascending: false }).limit(60)
+    const ciList = (ciRows ?? []) as { day: string; confirmed_at: string | null }[]
+    const ciTodayRow = ciList.find(c => c.day === bjToday)
+    setCiState(!ciTodayRow ? 'none' : ciTodayRow.confirmed_at ? 'confirmed' : 'pending')
+    setStkDays(calcStreak(ciList.filter(c => c.confirmed_at).map(c => c.day), bjToday))
     const [pc, tr] = await Promise.all([
       supabase.from('profile_change_requests').select('*').eq('user_id', id).eq('status', 'pending').maybeSingle(),
       supabase.from('am_transfers').select('*').eq('freelancer_id', id).order('created_at', { ascending: false }).limit(5),
@@ -442,6 +444,10 @@ export default function FreelancerDetail({ amScope = null }: { amScope?: Account
 
       <Card className="mb-5 p-5">
         <SectionTitle>{t.basics}</SectionTitle>
+        {p.avatar_path && (
+          <img src={supabase.storage.from('avatars').getPublicUrl(p.avatar_path).data.publicUrl} alt=""
+            className="mb-3 h-14 w-14 rounded-full border border-hair object-cover" />
+        )}
         <KV k={t.legal}>{p.full_name ?? '—'}</KV>
         <KV k={t.dob}>{p.date_of_birth ?? '—'}</KV>
         <KV k={t.addr}>{addrLine}</KV>
@@ -463,26 +469,43 @@ export default function FreelancerDetail({ amScope = null }: { amScope?: Account
         </KV>
         <KV k={t.joined}>{dateShort(p.created_at)}</KV>
         <KV k={t.owner}>
-          {amScope ? (
-            <span className="inline-flex items-center gap-3">
-              <span className={p.managed_by === amScope.id ? 'text-verified-text' : undefined}>
-                {p.managed_by ? (ams.find(a => a.id === p.managed_by)?.name ?? '…') : t.ownerNone}
+          <span className="block">
+            {amScope ? (
+              <span className="inline-flex flex-wrap items-center gap-3">
+                <span className={p.managed_by === amScope.id ? 'text-verified-text' : undefined}>
+                  {p.managed_by ? (ams.find(a => a.id === p.managed_by)?.name ?? '…') : t.ownerNone}
+                </span>
+                {p.managed_by === null && !p.is_rejected && !p.is_banned && (
+                  <button
+                    onClick={() => void (async () => {
+                      const { error: er } = await supabase.rpc('claim_freelancer', { p_freelancer: p.id })
+                      if (er) { setError(er.message); return }
+                      await load()
+                    })()}
+                    className="font-mono text-[11px] uppercase tracking-wider text-petrol transition hover:text-petrol-hover"
+                  >
+                    {t.claim}
+                  </button>
+                )}
+                {pendingTr ? (
+                  <>
+                    <span className="font-mono text-[11px] uppercase tracking-wider text-pending-text">{t.trPending}</span>
+                    {pendingTr.from_am === amScope.id && (
+                      <button disabled={trBusy} onClick={() => void cancelTransfer(pendingTr.id)}
+                        className="font-mono text-[11px] uppercase tracking-wider text-petrol transition hover:text-petrol-hover disabled:opacity-50">
+                        {t.trCancel}
+                      </button>
+                    )}
+                  </>
+                ) : p.managed_by === amScope.id ? (
+                  <button onClick={() => setTrDialog(true)}
+                    className="font-mono text-[11px] uppercase tracking-wider text-petrol transition hover:text-petrol-hover">
+                    {t.trBtn}
+                  </button>
+                ) : null}
               </span>
-              {p.managed_by === null && !p.is_rejected && !p.is_banned && (
-                <button
-                  onClick={() => void (async () => {
-                    const { error: er } = await supabase.rpc('claim_freelancer', { p_freelancer: p.id })
-                    if (er) { setError(er.message); return }
-                    await load()
-                  })()}
-                  className="font-mono text-[11px] uppercase tracking-wider text-petrol transition hover:text-petrol-hover"
-                >
-                  {t.claim}
-                </button>
-              )}
-            </span>
-          ) : (
-            <select
+            ) : (
+              <select
               value={p.managed_by ?? ''}
               onChange={e => {
                 const v = e.target.value || null
@@ -497,7 +520,20 @@ export default function FreelancerDetail({ amScope = null }: { amScope?: Account
               <option value="">{t.ownerNone}</option>
               {ams.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>
-          )}
+            )}
+            {!amScope && pendingTr && (
+              <span className="mt-1 block font-mono text-[11px] uppercase tracking-wider text-pending-text">{t.trPending}</span>
+            )}
+            {transfers.length > 0 && (
+              <span className="mt-1.5 block">
+                {transfers.map(x => (
+                  <span key={x.id} className="block font-mono text-[11px] text-faint">
+                    {dateShort(x.created_at)} · {amName2(x.from_am)} → {amName2(x.to_am)} · <span className="uppercase">{x.status}</span>
+                  </span>
+                ))}
+              </span>
+            )}
+          </span>
         </KV>
         {p.is_rejected && (
           <KV k={t.rejectedK}>
@@ -544,34 +580,6 @@ export default function FreelancerDetail({ amScope = null }: { amScope?: Account
         </Card>
       )}
 
-      {/* 归属转移(m25):AM 发起,admin 在人才库审核;此处双端留痕 */}
-      {(amScope && p.managed_by === amScope.id) || transfers.length > 0 ? (
-        <Card className="mb-5 p-5">
-          <SectionTitle>{t.trT}</SectionTitle>
-          {transfers.some(x => x.status === 'pending') ? (
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-pending-border bg-pending-bg px-3.5 py-2.5">
-              <span className="font-mono text-[11px] uppercase tracking-wider text-pending-text">{t.trPending}</span>
-              {amScope && transfers.find(x => x.status === 'pending')!.from_am === amScope.id && (
-                <Button variant="ghost" className="px-3 py-1.5 text-xs" disabled={trBusy}
-                  onClick={() => void cancelTransfer(transfers.find(x => x.status === 'pending')!.id)}>{t.trCancel}</Button>
-              )}
-            </div>
-          ) : amScope && p.managed_by === amScope.id ? (
-            <Button variant="ghost" className="mb-3 px-3.5 py-1.5 text-xs" onClick={() => setTrDialog(true)}>{t.trBtn}</Button>
-          ) : null}
-          {transfers.length > 0 && (
-            <div className="space-y-1.5">
-              <p className="font-mono text-[11px] uppercase tracking-wider text-faint">{t.trHist}</p>
-              {transfers.map(x => (
-                <p key={x.id} className="font-mono text-xs text-muted">
-                  {dateShort(x.created_at)} · {amName2(x.from_am)} → {amName2(x.to_am)} · <span className="uppercase">{x.status}</span>
-                </p>
-              ))}
-            </div>
-          )}
-        </Card>
-      ) : null}
-
       <Card className="mb-5 p-5">
         <SectionTitle>{t.workT}</SectionTitle>
         <div className="mb-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -586,41 +594,43 @@ export default function FreelancerDetail({ amScope = null }: { amScope?: Account
       </Card>
 
       <Card className="mb-5 p-5">
-        <SectionTitle>{t.bonusT}</SectionTitle>
-        <KV k="USD">{usd(p.signup_bonus_usd ?? 2.99)}</KV>
-        <KV k={t.bonusState}>
-          {p.signup_bonus_state === 'paid' ? t.bPaid
-            : p.signup_bonus_state === 'requested' ? t.bRequested
-            : p.enhanced_kyc_status === 'verified' ? t.bReady : t.bLocked}
-        </KV>
-        {p.signup_bonus_state === 'paid' && (
-          <>
-            {p.bonus_tx_ref && <KV k={t.bTxRef}><span className="font-mono text-xs">{p.bonus_tx_ref}</span></KV>}
-            {p.bonus_paid_at && <KV k={t.bPaidAt}>{dateShort(p.bonus_paid_at)}</KV>}
-          </>
-        )}
-        {p.signup_bonus_state === 'requested' && (
-          <div className="mt-3 border-t border-hair pt-3">
-            <div className="mb-3"><Label>{t.bTxRef}</Label><Input value={bTx} onChange={e => setBTx(e.target.value)} className="font-mono" placeholder="PP-… / TXID" /></div>
-            <div className="flex items-center gap-3">
-              <Button className="px-4 py-2 text-xs" disabled={bBusy} onClick={markPaid}>{bBusy ? '…' : t.bMark}</Button>
-              {bMsg && <span className="font-mono text-[11px] uppercase tracking-wider text-verified-text">{bMsg}</span>}
-            </div>
+        <SectionTitle>{t.rewardsT}</SectionTitle>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-hair pb-3">
+          <p className="text-sm text-ink">{t.signupRow} · <span className="font-display font-medium">{usd(p.signup_bonus_usd ?? 2.99)}</span></p>
+          <span className="text-right font-mono text-[11px] uppercase tracking-wider text-faint">
+            {p.signup_bonus_state === 'paid'
+              ? `${t.bPaid}${p.bonus_tx_ref ? ` · ${p.bonus_tx_ref}` : ''}${p.bonus_paid_at ? ` · ${dateShort(p.bonus_paid_at)}` : ''}`
+              : p.signup_bonus_state === 'requested' ? t.bRequested
+              : p.enhanced_kyc_status === 'verified' ? t.bReady : t.bLocked}
+            {p.signup_bonus_state === 'requested' && (
+              <Link to={amScope ? '/am/payouts' : '/admin/payouts'} className="ml-2 text-petrol underline underline-offset-2">{t.bGoPayout}</Link>
+            )}
+          </span>
+        </div>
+        <div className="mb-3 rounded-xl border border-hair bg-paper px-4 py-2.5">
+          <div className="flex items-center justify-between gap-3">
+            <span className="font-mono text-[11px] uppercase tracking-wider text-faint">{t.ciToday}</span>
+            {ciState === 'confirmed' ? (
+              <span className="font-mono text-[11px] uppercase tracking-wider text-verified-text">{t.ciDone}</span>
+            ) : ciState === 'pending' ? (
+              <Button className="px-3 py-1.5 text-xs" disabled={ciBusy} onClick={() => void confirmCi()}>{ciBusy ? '…' : t.ciPending}</Button>
+            ) : (
+              <span className="font-mono text-[11px] uppercase tracking-wider text-faint">{t.ciNone}</span>
+            )}
           </div>
-        )}
-      </Card>
-
-      <Card className="mb-5 p-5">
-        <SectionTitle>{t.streakT}</SectionTitle>
-        <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-hair bg-paper px-4 py-2.5">
-          <span className="font-mono text-[11px] uppercase tracking-wider text-faint">{t.ciToday}</span>
-          {ciState === 'confirmed' ? (
-            <span className="font-mono text-[11px] uppercase tracking-wider text-verified-text">{t.ciDone}</span>
-          ) : ciState === 'pending' ? (
-            <Button className="px-3 py-1.5 text-xs" disabled={ciBusy} onClick={() => void confirmCi()}>{ciBusy ? '…' : t.ciPending}</Button>
-          ) : (
-            <span className="font-mono text-[11px] uppercase tracking-wider text-faint">{t.ciNone}</span>
-          )}
+          <p className="mt-1.5 font-mono text-[11px] text-muted">
+            {(() => {
+              const next = STREAK_TIERS.find(x => stkDays < x.d)
+              if (lang === 'zh') {
+                return next
+                  ? `已连续复核 ${stkDays} 天 · 距 ${next.d} 天档还差 ${next.d - stkDays} 天,解锁 ${usd(next.a)}`
+                  : `已连续复核 ${stkDays} 天 · 全部档位已解锁`
+              }
+              return next
+                ? `${stkDays}-day confirmed streak · ${next.d - stkDays} more to unlock ${usd(next.a)} at ${next.d} days`
+                : `${stkDays}-day confirmed streak · all tiers unlocked`
+            })()}
+          </p>
         </div>
         {grants.length === 0 ? (
           <p className="py-1 text-sm text-faint">{t.streakEmpty}</p>
@@ -633,13 +643,7 @@ export default function FreelancerDetail({ amScope = null }: { amScope?: Account
               </p>
             </div>
             {g.state === 'requested' && (
-              <div className="flex shrink-0 items-center gap-2">
-                <Input value={gTx[g.id] ?? ''} onChange={e => setGTx(prev => ({ ...prev, [g.id]: e.target.value }))}
-                  className="w-44 font-mono text-xs" placeholder="PP-… / TXID" />
-                <Button className="px-3 py-1.5 text-xs" disabled={gBusy === g.id} onClick={() => void markGrantPaid(g.id)}>
-                  {gBusy === g.id ? '…' : t.bMark}
-                </Button>
-              </div>
+              <Link to={amScope ? '/am/payouts' : '/admin/payouts'} className="shrink-0 font-mono text-[11px] uppercase tracking-wider text-petrol underline underline-offset-2">{t.bGoPayout}</Link>
             )}
           </div>
         ))}
@@ -706,10 +710,10 @@ export default function FreelancerDetail({ amScope = null }: { amScope?: Account
           </p>
           <div className="mt-4 border-t border-hair pt-3">
             <SectionTitle>{t.wallet}</SectionTitle>
-            {p.payout_method === PP_KEY && pick(p, K_PAYOUT_PP_EMAIL) ? (
+            {p.payout_method === 'paypal' && p.payout_paypal_email ? (
               <>
-                <p className="font-mono text-xs text-ink">{PP}</p>
-                <p className="mt-1 break-all font-mono text-xs text-muted">{pick(p, K_PAYOUT_PP_EMAIL)}</p>
+                <p className="font-mono text-xs text-ink">PayPal</p>
+                <p className="mt-1 break-all font-mono text-xs text-muted">{p.payout_paypal_email}</p>
               </>
             ) : p.payout_address && p.payout_network && p.payout_token ? (
               <>

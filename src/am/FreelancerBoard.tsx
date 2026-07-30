@@ -10,7 +10,6 @@ import SecretText from '../components/SecretText'
 import { ConfirmDialog, PromptDialog } from '../components/dialogs'
 import { useLang } from '../admin/i18n'
 import { useAm } from './AmLayout'
-import { pingWorkline } from '../lib/workline'
 
 /** 三圆圈进度：① freelancer 完成 → ② 你验收 → ③ 平台通过。
  *  对应 Roman 的心智模型：钱要走完三关才进钱包。 */
@@ -41,6 +40,8 @@ const COPY = {
     expires: '手机号到期日', notes: '备注', save: '保存', saving: '保存中…', cancel: '取消', edit: '编辑',
     daysLeft: (d: number) => d < 0 ? '已过期' : d === 0 ? '今天到期' : `剩 ${d} 天`,
     noRec: '还没有账号资料。',
+    reqDel: '申请删除', cancelDel: '撤回删除申请', delPending: '删除待审核',
+    delConfirm: '确认申请删除这条账号资料？需管理员批准后才会真正删除。',
     suspend: '暂停接单', resume: '恢复接单', suspended: '已暂停',
     suspendQ: '暂停原因(内部记录):',
     circleHint: '每一项要走完三关才计提成：① TA 完成任务 → ② 你验收 → ③ 平台复核通过。',
@@ -56,6 +57,8 @@ const COPY = {
     expires: 'Phone expires on', notes: 'Notes', save: 'Save', saving: 'Saving…', cancel: 'Cancel', edit: 'Edit',
     daysLeft: (d: number) => d < 0 ? 'expired' : d === 0 ? 'expires today' : `${d}d left`,
     noRec: 'No account records yet.',
+    reqDel: 'Request delete', cancelDel: 'Cancel request', delPending: 'Delete pending',
+    delConfirm: 'Request deletion of this record? An admin must approve before it is removed.',
     suspend: 'Pause', resume: 'Resume', suspended: 'Paused',
     suspendQ: 'Pause reason (internal):',
     circleHint: 'Each item clears three gates before it pays: ① they finish → ② you accept → ③ platform approves.',
@@ -152,7 +155,6 @@ export default function AmFreelancerBoard() {
     setError(null)
     const { error: e } = await supabase.rpc('reopen_acceptance', { p_acceptance: a.id, p_reason: reason })
     if (e) { setError(e.message); return }
-    pingWorkline()
     await load()
   }
 
@@ -162,7 +164,6 @@ export default function AmFreelancerBoard() {
     setError(null)
     const { error: e } = await supabase.rpc('resolve_reopened', { p_acceptance: a.id, p_note: null })
     if (e) { setError(e.message); return }
-    pingWorkline()
     await load()
   }
 
@@ -172,7 +173,6 @@ export default function AmFreelancerBoard() {
     const { error: e } = await supabase.rpc('am_accept', { p_freelancer: id, p_type: type })
     setBusyType(null)
     if (e) { setError(e.message); return }
-    pingWorkline()
     await load()
   }
 
@@ -181,7 +181,6 @@ export default function AmFreelancerBoard() {
     const { error: e } = await supabase.rpc('am_accept_task', { p_task: taskId })
     setBusyType(null)
     if (e) { setError(e.message); return }
-    pingWorkline()
     await load()
   }
 
@@ -199,6 +198,18 @@ export default function AmFreelancerBoard() {
     setError(null)
     const { error: e } = await supabase.rpc('am_set_suspended', { p_freelancer: id, p_suspend: false })
     if (e) { setError(e.message); return }
+    await load()
+  }
+
+  async function reqDel(id: string) {
+    if (!window.confirm(t.delConfirm)) return
+    const { error: e } = await supabase.rpc('request_record_delete', { p_record: id })
+    if (e) { window.alert(e.message); return }
+    await load()
+  }
+  async function cancelDel(id: string) {
+    const { error: e } = await supabase.rpc('cancel_record_delete', { p_record: id })
+    if (e) { window.alert(e.message); return }
     await load()
   }
 
@@ -381,6 +392,20 @@ export default function AmFreelancerBoard() {
                         className="mt-2 font-mono text-[10px] uppercase tracking-wider text-petrol transition hover:text-petrol-hover">
                         {t.edit}
                       </button>
+                      {r.delete_requested_at ? (
+                        <>
+                          <span className="ml-3 font-mono text-[10px] uppercase tracking-wider text-pending-text">{t.delPending}</span>
+                          <button onClick={() => void cancelDel(r.id)}
+                            className="ml-2 font-mono text-[10px] uppercase tracking-wider text-muted transition hover:text-ink">
+                            {t.cancelDel}
+                          </button>
+                        </>
+                      ) : (
+                        <button onClick={() => void reqDel(r.id)}
+                          className="ml-3 font-mono text-[10px] uppercase tracking-wider text-danger-text/70 transition hover:text-danger-text">
+                          {t.reqDel}
+                        </button>
+                      )}
                       {recEditing === r.id && recFormCard(type)}
                     </div>
                   ))}

@@ -6,6 +6,7 @@ import { PageHeading, Card, Button, Alert, Field } from '../components/ui'
 import { useLang } from '../admin/i18n'
 import { Link } from 'react-router-dom'
 import { useAm } from './AmLayout'
+import AvatarUpload, { avatarPublicUrl } from '../components/AvatarUpload'
 
 const COPY = {
   zh: { title: '我的资料', sub: '你的身份、数据一览与联系方式。',
@@ -36,6 +37,13 @@ export default function AmMe() {
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [avatarPath, setAvatarPath] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!user) return
+    void supabase.from('profiles').select('avatar_path').eq('id', user.id).maybeSingle()
+      .then(({ data }) => setAvatarPath((data as { avatar_path: string | null } | null)?.avatar_path ?? null))
+  }, [user])
 
   useEffect(() => {
     if (!am) return
@@ -79,6 +87,7 @@ export default function AmMe() {
   }
 
   const initial = (am.name || '?').trim().charAt(0).toUpperCase()
+  const avUrl = avatarPublicUrl(avatarPath)
 
   return (
     <div className="mx-auto max-w-2xl">
@@ -88,9 +97,13 @@ export default function AmMe() {
       {/* 报头式身份卡 */}
       <Card className="mb-4 p-6">
         <div className="flex items-center gap-4">
-          <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-petrol font-display text-xl font-medium text-paper">
-            {initial}
-          </span>
+          {avUrl ? (
+            <img src={avUrl} alt="" className="h-14 w-14 shrink-0 rounded-xl border border-hair object-cover" />
+          ) : (
+            <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-petrol font-display text-xl font-medium text-paper">
+              {initial}
+            </span>
+          )}
           <div className="min-w-0">
             <p className="flex items-center gap-2 truncate font-display text-xl font-medium tracking-tight text-ink">
               {am.name}
@@ -101,6 +114,12 @@ export default function AmMe() {
             </p>
           </div>
         </div>
+        {user && (
+          <div className="mt-4 border-t border-hair pt-4">
+            <AvatarUpload uid={user.id} name={am.name} path={avatarPath} lang={lang}
+              onChanged={p => setAvatarPath(p)} />
+          </div>
+        )}
       </Card>
 
       {/* 四枚数据瓦片:等宽大数字 = 单据感 */}

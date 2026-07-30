@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import Masthead from '../components/Masthead'
 import AdminTodoDock from './AdminTodoDock'
 import { useUnread } from '../components/useUnread'
-import { onWorkline } from '../lib/workline'
 import { AdminLangProvider, useLang } from './i18n'
 import { ConfirmDialog } from './bits'
 
@@ -17,7 +16,7 @@ const NAV_GROUPS = [
   ],
   [
     { to: '/admin/kyc', zh: 'KYC 审核', en: 'KYC', badge: 'kyc' as const },
-    { to: '/admin/payouts', zh: '提现', en: 'Payouts' },
+    { to: '/admin/payouts', zh: '提现', en: 'Payouts', badge: 'payout' as const },
     { to: '/admin/accounts', zh: '资料库', en: 'Library' },
   ],
   [
@@ -37,21 +36,23 @@ function Shell() {
   const [askOut, setAskOut] = useState(false)
   const [reviewCount, setReviewCount] = useState(0)
   const [kycCount, setKycCount] = useState(0)
+  const [payoutCount, setPayoutCount] = useState(0)
 
   // 惰性过期:控制台打开时清一次超时 offer(任务自动退回池子)
   useEffect(() => { void supabase.rpc('expire_stale_offers') }, [])
 
-  // 提成复核/KYC 角标:换页刷新 + 站内处理动作(workline)即时刷新(v60,与 AM 端同一机制)
-  const loadBadges = useCallback(() => {
+  // 提成复核待办角标（换页即刷新,处理完待办数字实时归零）
+  useEffect(() => {
     supabase.from('platform_acceptances')
       .select('id', { count: 'exact', head: true }).eq('status', 'pending_admin')
       .then(({ count }) => setReviewCount(count ?? 0))
     supabase.from('kyc_submissions')
       .select('id', { count: 'exact', head: true }).eq('status', 'pending')
       .then(({ count }) => setKycCount(count ?? 0))
-  }, [])
-  useEffect(() => { loadBadges() }, [loadBadges, pathname])
-  useEffect(() => onWorkline(() => loadBadges()), [loadBadges])
+    supabase.from('payout_requests')
+      .select('id', { count: 'exact', head: true }).eq('status', 'pending')
+      .then(({ count }) => setPayoutCount(count ?? 0))
+  }, [pathname])
 
   const { user } = useAuth()
   const unread = useUnread(!!user)
@@ -78,7 +79,7 @@ function Shell() {
         groups={NAV_GROUPS.map(g => g.map(n => ({
           to: n.to,
           label: lang === 'zh' ? n.zh : n.en,
-          count: 'badge' in n ? (n.badge === 'review' ? reviewCount : n.badge === 'kyc' ? kycCount : unread) : undefined,
+          count: 'badge' in n ? (n.badge === 'review' ? reviewCount : n.badge === 'kyc' ? kycCount : n.badge === 'payout' ? payoutCount : unread) : undefined,
         })))}
         right={
           <>
