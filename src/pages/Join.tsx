@@ -71,6 +71,7 @@ function JoinInner() {
   const [lead, setLead] = useState<LeadRow | null>(null)
   const [convId, setConvId] = useState<string | null>(null)
   const [supUid, setSupUid] = useState<string | null>(null)
+  const [fastConv, setFastConv] = useState<string | null>(null)
 
   // v63 ⑪:接待档身份(全员离线时访客直连 LocalTask Support)
   useEffect(() => {
@@ -93,7 +94,8 @@ function JoinInner() {
     setCaptchaToken(tok)
     if (tok && tokenWaiter.current) { tokenWaiter.current(tok); tokenWaiter.current = null }
   }, [])
-  const awaitFreshToken = () => new Promise<string>(res => { tokenWaiter.current = res })
+
+
 
   const fetchLead = useCallback(async (uid: string): Promise<LeadRow | null> => {
     const { data } = await supabase.from('leads')
@@ -101,6 +103,13 @@ function JoinInner() {
       .eq('profile_id', uid).maybeSingle()
     return (data ?? null) as LeadRow | null
   }, [])
+
+  // v67 保险丝:初探 2.5s 未决 → 强制落表单,杜绝白屏
+  useEffect(() => {
+    if (phase !== 'probe') return
+    const id = window.setTimeout(() => setPhase(p => (p === 'probe' ? 'form' : p)), 2500)
+    return () => window.clearTimeout(id)
+  }, [phase])
 
   // 首探:有会话 → 找线索;有邮箱账号 → 会员提示;否则表单
   useEffect(() => {
@@ -149,42 +158,51 @@ function JoinInner() {
     setError(null)
     if (!name.trim()) { setError(t.errName); return }
     if (!waLooksValid(cc, waNum)) { setError(t.errWa); return }
-    if (!captchaToken) { setError(t.errCaptcha); return }
     setBusy(true)
     try {
-      let token = captchaToken
       const { data: sess } = await supabase.auth.getSession()
       if (!sess.session) {
-        // Turnstile token 一次性:先用它换匿名会话,再重置取新 token 给 Edge 二次验证
+        // 一张票流程(v67):Turnstile 票只喂给匿名登录,人机校验由 GoTrue 完成;
+        // Edge 不再二次验票(会话本身即人机证明) —— "重置换票"环节从此不存在
+        if (!captchaToken) { setError(t.errCaptcha); setBusy(false); return }
         const { error: aerr } = await supabase.auth.signInAnonymously({
-          options: { captchaToken: token },
+          options: { captchaToken },
         })
-        if (aerr) { setError(aerr.message); setBusy(false); return }
-        captchaRef.current?.reset()
-        token = await awaitFreshToken()
+        if (aerr) {
+          captchaRef.current?.reset(); setCaptchaToken(null)
+          setError(aerr.message); setBusy(false); return
+        }
       }
       const { data, error: ferr } = await supabase.functions.invoke('lead-intake', {
         body: {
-          token,
           full_name: name.trim(),
           wa_e164: normalizeWa(cc, waNum),
           telegram: tg.trim().replace(/^@/, '') || null,
         },
       })
-      captchaRef.current?.reset()
-      setCaptchaToken(null)
-      const r = data as { ok?: boolean; error?: string } | null
+      const r = data as { ok?: boolean; error?: string; status?: string;
+        am?: { name: string } | null; conversation_id?: string | null } | null
       if (ferr || !r?.ok) {
         const code = r?.error ?? ''
         if (code === 'signed_in') { setPhase('member'); setBusy(false); return }
+        captchaRef.current?.reset(); setCaptchaToken(null)
         setError(code === 'captcha' ? t.errCaptcha : code || ferr?.message || t.errGeneric)
         setBusy(false)
         return
       }
+      // Meta Pixel:Lead 转化事件(像素被拦/未加载时 fbq 不存在,安全空转)
+      ;(window as unknown as { fbq?: (...a: unknown[]) => void }).fbq?.('track', 'Lead')
+      // v67:提交成功即身处聊天 —— 函数返回值直接搭现场,线索详情后台补水
+      if (r.conversation_id) setFastConv(r.conversation_id)
+      setLead({
+        id: '', status: 'new', wa_e164: normalizeWa(cc, waNum), ref_token: '',
+        assigned_am: r.status === 'assigned' ? 'pending' : null,
+        am: r.am?.name ? { name: r.am.name, user_id: '' } : null,
+      } as unknown as LeadRow)
+      setPhase('ready')
       const { data: sess2 } = await supabase.auth.getSession()
       if (sess2.session) {
-        const l = await fetchLead(sess2.session.user.id)
-        if (l) { setLead(l); setPhase('ready') }
+        void fetchLead(sess2.session.user.id).then(l => { if (l) setLead(l) })
       }
     } catch {
       setError(t.errGeneric)
@@ -192,6 +210,7 @@ function JoinInner() {
     setBusy(false)
   }
 
+  const liveConv = fastConv ?? convId
   const converted = lead?.status === 'converted'
   const amName = lead?.am?.name ?? null
 
@@ -245,7 +264,7 @@ function JoinInner() {
             <div className="mt-5">
               <CaptchaBox ref={captchaRef} action="join" onToken={onToken} />
             </div>
-            <Button onClick={() => void submit()} disabled={busy || !captchaToken} className="w-full">
+            <Button onClick={() => void submit()} disabled={busy || (!captchaToken && !user)} className="w-full">
               {busy ? t.busy : t.cta}
             </Button>
             <p className="mt-4 text-center font-mono text-[10.5px] text-faint">
@@ -277,8 +296,8 @@ function JoinInner() {
                   </span>
                 </div>
                 <div className="h-[62vh] min-h-[24rem]">
-                  {convId && user ? (
-                    <LeadChat conversationId={convId} meId={user.id} otherId={chatTarget} lang={lang} readOnly={converted} />
+                  {liveConv && user ? (
+                    <LeadChat conversationId={liveConv} meId={user.id} otherId={chatTarget ?? null} lang={lang} readOnly={converted} />
                   ) : (
                     <p className="pt-16 text-center text-sm text-faint">…</p>
                   )}
