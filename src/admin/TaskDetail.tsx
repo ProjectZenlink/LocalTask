@@ -3,12 +3,10 @@ import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { SITE_URL } from '../lib/site'
 import SecretText from '../components/SecretText'
-import { useAuth } from '../context/AuthContext'
 import type { Task, TaskOffer, TaskSubmission, PoolRow, AccountManager } from '../types/database'
 import { payoutLabel, TASK_TYPES } from '../types/database'
 import type { PlatformType } from '../types/database'
 import { money, usd, lt, taskMoney, dateShort, dateTimeShort, txUrl, shortHash, signTaskFiles, fileNameFromPath, isImagePath, typeLabel, openSigned } from '../lib/format'
-import { PP, PP_KEY, pick, K_PAYOUT_PP_EMAIL } from '../lib/brand'
 import { Card, Button, Alert, Label, Input, Textarea, Linkified, SectionTitle } from '../components/ui'
 import { TaskStatusBadge, Th, Td, KV, waLink, tgLink, PromptDialog } from './bits'
 import { xLink, toLocalInput, safeFileName } from '../lib/format'
@@ -34,8 +32,7 @@ const COPY = {
     review: '审核交付', reviewNote: '审核意见(退回时必填,freelancer 可见)', approve: '通过', reject: '退回修改',
     vNote: '退回必须填写审核意见。',
     payTitle: '放款', payReq: 'freelancer 已在钱包申请提现', payHint1: '把下面的地址和金额发给客户打款:', payHint2: '客户打款后把交易 hash 填在这里:',
-    hash: '交易 Hash / 收款平台交易号(可选)', payNote: '付款备注(可选)', markPaid: '标记已付款', paid: '已标记付款,等 freelancer 确认到账关单。',
-    hashBad: '交易号格式看起来不对:链上交易号有固定格式,收款平台交易号是 8–32 位字母数字。请核对后重填。',
+    paid: '已标记付款,等 freelancer 确认到账关单。', payViaReq: '打款统一在「提现」工单页整单处理(以工单冻结的收款地址为准)。本页不再提供逐单直接标记付款。', payViaReqLink: '去提现工单页 →',
     tx: '交易',
     back: '← 任务列表', tags: '标签', dlgCancel: '取消', copyLink: '复制验收链接', copied: '已复制 ✓', edit: '编辑任务', save: '保存修改', saving: '保存中…', cancelEdit: '取消编辑', addFiles: '追加附件(可多选)', tagHint: '标签(回车或逗号添加)', doneT: '已完成',
     
@@ -57,8 +54,7 @@ const COPY = {
     review: 'Review submission', reviewNote: 'Review note (required when returning, visible to freelancer)', approve: 'Approve', reject: 'Return for revision',
     vNote: 'A review note is required when returning.',
     payTitle: 'Payment', payReq: 'Freelancer requested payout from their wallet', payHint1: 'Send this address and amount to the client:', payHint2: 'Once the client pays, paste the transaction hash:',
-    hash: 'Transaction hash / payment txn ID (optional)', payNote: 'Payment note (optional)', markPaid: 'Mark as paid', paid: 'Marked paid — waiting for the freelancer to confirm receipt.',
-    hashBad: 'That reference looks off: on-chain refs have a fixed format; payment ref = 8–32 alphanumerics. Please double-check.',
+    paid: 'Marked paid — waiting for the freelancer to confirm receipt.', payViaReq: 'Payouts are settled on the Payouts page against the destination frozen on the request. Per-task manual marking has been removed.', payViaReqLink: 'Open Payouts →',
     tx: 'Transaction',
     back: '← All tasks', tags: 'Tags', dlgCancel: 'Cancel', copyLink: 'Copy acceptance link', copied: 'Copied ✓', edit: 'Edit task', save: 'Save changes', saving: 'Saving…', cancelEdit: 'Cancel editing', addFiles: 'Add attachments (multiple)', tagHint: 'Tags (Enter or comma to add)', doneT: 'Completed',
     
@@ -74,7 +70,6 @@ export default function AdminTaskDetail({ amScope = null }: { amScope?: AccountM
   const { lang } = useLang()
   const t = COPY[lang]
   const { id } = useParams<{ id: string }>()
-  const { user } = useAuth()
   const base = amScope ? '/am/tasks' : '/admin/tasks'
 
   const [task, setTask] = useState<TaskRow | null>(null)
@@ -89,8 +84,6 @@ export default function AdminTaskDetail({ amScope = null }: { amScope?: AccountM
   const [busy, setBusy] = useState(false)
 
   const [reviewNote, setReviewNote] = useState('')
-  const [hash, setHash] = useState('')
-  const [payNote, setPayNote] = useState('')
   const [dialog, setDialog] = useState<null | 'cancel' | 'editcom'>(null)
   const [copied, setCopied] = useState(false)
   const [editing, setEditing] = useState(false)
@@ -161,21 +154,6 @@ export default function AdminTaskDetail({ amScope = null }: { amScope?: AccountM
     void run(async () => supabase.from('task_submissions')
       .update({ status: approve ? 'approved' : 'returned', review_note: reviewNote.trim() || null })
       .eq('id', latest.id))
-  }
-
-  const markPaid = () => {
-    const h = hash.trim()
-    // m24/B1:交易号选填 —— 留空直接放行,填了才做格式体检
-    const okFormat = !h ? true : task.payout_method === PP_KEY
-      ? /^[A-Za-z0-9-]{8,32}$/.test(h)
-      : task.payout_network === 'tron' ? /^[0-9a-fA-F]{64}$/.test(h)
-      : task.payout_network === 'ethereum' ? /^0x[0-9a-fA-F]{64}$/.test(h)
-      : true
-    if (!okFormat) { setError(t.hashBad); return }
-    void run(async () => supabase.from('tasks').update({
-      tx_hash: h || null, payment_note: payNote.trim() || null,
-      paid_at: new Date().toISOString(), paid_marked_by: user?.id ?? null,
-    }).eq('id', task.id))
   }
 
   const doCancel = (reason: string) => {
@@ -262,17 +240,17 @@ export default function AdminTaskDetail({ amScope = null }: { amScope?: AccountM
             </button>
           )}
         </KV>
-        {task.payout_method === PP_KEY ? (
-          <KV k={t.payMethod}><span className="font-mono">{PP}</span></KV>
+        {task.payout_method === 'paypal' ? (
+          <KV k={t.payMethod}><span className="font-mono">PayPal</span></KV>
         ) : task.payout_network && task.payout_token && (
           <KV k={t.payMethod}><span className="font-mono">{payoutLabel(task.payout_network, task.payout_token)}</span></KV>
         )}
         <KV k={t.deadline}>{task.deadline ? dateTimeShort(task.deadline) : t.none}</KV>
         <KV k={t.created}>{dateShort(task.created_at)}</KV>
         <KV k={t.assignee}>{offers.find(o => o.status === 'accepted')?.freelancer?.display_name ?? (task.assigned_freelancer ? task.assigned_freelancer.slice(0, 8) : t.none)}</KV>
-        {(task.payout_method === PP_KEY ? pick(task, K_PAYOUT_PP_EMAIL) : task.payout_address) && (
+        {(task.payout_method === 'paypal' ? task.payout_paypal_email : task.payout_address) && (
           <KV k={t.payout}><span className="break-all font-mono text-xs">
-            {task.payout_method === PP_KEY ? pick(task, K_PAYOUT_PP_EMAIL) : task.payout_address}
+            {task.payout_method === 'paypal' ? task.payout_paypal_email : task.payout_address}
           </span></KV>
         )}
         {task.tags.length > 0 && (
@@ -327,7 +305,7 @@ export default function AdminTaskDetail({ amScope = null }: { amScope?: AccountM
                   {pool.map(p => (
                     <tr key={p.id} className="border-b border-hair last:border-b-0">
                       <Td>{p.display_name ?? p.id.slice(0, 8)}</Td>
-                      <Td className="whitespace-nowrap font-mono text-xs">{p.payout_method === PP_KEY ? PP : p.payout_network && p.payout_token ? payoutLabel(p.payout_network, p.payout_token) : '—'}</Td>
+                      <Td className="whitespace-nowrap font-mono text-xs">{p.payout_method === 'paypal' ? 'PayPal' : p.payout_network && p.payout_token ? payoutLabel(p.payout_network, p.payout_token) : '—'}</Td>
                       <Td className="font-mono text-xs">{p.active_tasks}</Td>
                       <Td className="font-mono text-xs">{p.completed_tasks}</Td>
                       <Td className="font-mono text-xs">
@@ -395,13 +373,17 @@ export default function AdminTaskDetail({ amScope = null }: { amScope?: AccountM
           )}
           {!task.paid_at ? (
             <>
+              <p className="mb-3 rounded-lg border border-hair bg-paper px-3 py-2 text-xs leading-relaxed text-muted">
+                {t.payViaReq}{' '}
+                <Link to="/admin/payouts" className="font-mono text-petrol underline underline-offset-2">{t.payViaReqLink}</Link>
+              </p>
               <p className="text-sm text-ink">{t.payHint1}</p>
               <p className="mt-1 break-all font-mono text-xs text-ink">
-                {task.payout_method === PP_KEY ? pick(task, K_PAYOUT_PP_EMAIL) : task.payout_address}
+                {task.payout_method === 'paypal' ? task.payout_paypal_email : task.payout_address}
               </p>
               <p className="mt-1 font-mono text-xs text-ink">
-                {task.payout_method === PP_KEY
-                  ? <>{usd(task.amount)} · {PP}</>
+                {task.payout_method === 'paypal'
+                  ? <>{usd(task.amount)} · PayPal</>
                   : <>
                       {task.payout_token === 'ETH'
                         ? (lang === 'zh' ? `按市价折合 ${usd(task.amount)} 的 ETH` : `the USD equivalent of ${usd(task.amount)} in ETH`)
@@ -409,12 +391,6 @@ export default function AdminTaskDetail({ amScope = null }: { amScope?: AccountM
                       {task.payout_network && task.payout_token && <> · {payoutLabel(task.payout_network, task.payout_token)}</>}
                     </>}
               </p>
-              <p className="mt-4 text-sm text-ink">{t.payHint2}</p>
-              <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div><Label>{t.hash}</Label><Input value={hash} onChange={e => setHash(e.target.value)} className="font-mono text-xs" /></div>
-                <div><Label>{t.payNote}</Label><Input value={payNote} onChange={e => setPayNote(e.target.value)} /></div>
-              </div>
-              <Button className="mt-4" disabled={busy} onClick={markPaid}>{t.markPaid}</Button>
             </>
           ) : (
             <p className="text-sm text-ink">

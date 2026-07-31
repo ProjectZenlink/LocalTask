@@ -1,11 +1,9 @@
 import { useEffect, useState } from 'react'
-import LogoMark from '../components/LogoMark'
 import { useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import type { TaskStatus, ChainNetwork, TokenSymbol } from '../types/database'
 import { payoutLabel } from '../types/database'
 import { usd, money, dateTimeShort, txUrl, shortHash } from '../lib/format'
-import { PP_KEY, pick, K_PAYOUT_PP_EMAIL } from '../lib/brand'
 import { Card, StatusBadge, SectionTitle, Linkified } from '../components/ui'
 
 interface SharedTask {
@@ -54,7 +52,7 @@ export default function ShareTask() {
     <div className="min-h-screen">
       <header className="border-b border-hair">
         <div className="mx-auto flex max-w-2xl items-center gap-2.5 px-5 py-4">
-          <LogoMark className="h-6 w-6 rounded-md" />
+          <img src="/logo.svg" alt="" className="h-6 w-6 rounded-md" />
           <span className="font-display text-lg font-medium tracking-tight text-ink">LocalTask</span>
         </div>
       </header>
@@ -90,20 +88,20 @@ export default function ShareTask() {
               </div>
             </Card>
 
-            {(task.payout_method === PP_KEY ? !!pick(task, K_PAYOUT_PP_EMAIL) : (task.payout_address && task.payout_network && task.payout_token)) && (
+            {(task.payout_method === 'paypal' ? !!task.payout_paypal_email : (task.payout_address && task.payout_network && task.payout_token)) && (
               <Card className="mb-5 border-verified-border bg-verified-bg p-5">
                 <SectionTitle>付款信息</SectionTitle>
                 <p className="text-sm leading-relaxed text-ink">
                   任务已通过验收,请按以下方式付款:
                 </p>
-                {task.payout_method === PP_KEY ? (
+                {task.payout_method === 'paypal' ? (
                   <>
-                    <p className="mt-2 font-mono text-xs text-ink">{usd(task.amount)} · Payment account</p>
-                    <p className="mt-1 break-all font-mono text-xs text-ink">{pick(task, K_PAYOUT_PP_EMAIL)}</p>
+                    <p className="mt-2 font-mono text-xs text-ink">{usd(task.amount)} · PayPal</p>
+                    <p className="mt-1 break-all font-mono text-xs text-ink">{task.payout_paypal_email}</p>
                     {task.status === 'completed' && task.tx_hash ? (
                       <p className="mt-3 text-sm text-verified-text">✓ 本单已结清 · 参考号 <span className="font-mono">{shortHash(task.tx_hash)}</span></p>
                     ) : (
-                      <p className="mt-3 text-xs text-muted">付款完成后,请把交易凭证发给您的对接人。</p>
+                      <p className="mt-3 text-xs text-muted">付款完成后,请把 PayPal 交易号发给您的对接人。</p>
                     )}
                   </>
                 ) : (

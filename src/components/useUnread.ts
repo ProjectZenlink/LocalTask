@@ -24,5 +24,10 @@ export function useUnread(enabled: boolean) {
     return () => { alive = false; if (timer.current) clearTimeout(timer.current); void supabase.removeChannel(ch) }
   }, [enabled, pathname])
 
+  useEffect(() => {
+    const base = document.title.replace(/^\(\d+\) /, '')
+    document.title = count > 0 ? `(${count}) ${base}` : base
+  }, [count])
+
   return count
 }

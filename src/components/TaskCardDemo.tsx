@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Lock } from 'lucide-react'
 
-/** Hero 主秀 v2:双任务交替(演示两种收款形态),全区域定高零回流。
+/** Hero 主秀 v2:双任务交替(USDT ↔ PayPal),全区域定高零回流。
  *  脚本:落桌 → 字段显影 → OFFER → 进行中 → 已提交 → 已付款 →
  *  「Confirm received」呼吸 → 你确认 → CLOSED 钢印 → 淡出,换下一单。 */
 
@@ -9,8 +9,8 @@ const PHASE_MS = [950, 1700, 2100, 1900, 2100, 2700, 2900, 650]
 const STEPS = ['OFFER', 'ACTIVE', 'SUBMITTED', 'PAID', 'CLOSED'] as const
 
 const TASKS = [
-  { id: 'TASK A-1042', amt: '$120.00', time: '~45 min', payout: 'Stablecoin', ref: 'TX 7f3a…9c2e' },
-  { id: 'TASK B-2087', amt: '$85.00', time: '~30 min', payout: 'e-Wallet', ref: 'Ref 8KD2…41ZQ' },
+  { id: 'TASK A-1042', amt: '$120.00', time: '~45 min', payout: 'USDT · TRC20', ref: 'TX 7f3a…9c2e' },
+  { id: 'TASK B-2087', amt: '$85.00', time: '~30 min', payout: 'PayPal', ref: 'Ref 8KD2…41ZQ' },
 ] as const
 
 function stepIndex(phase: number): number {

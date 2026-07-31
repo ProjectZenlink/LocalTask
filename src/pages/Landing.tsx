@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react'
-import LogoMark from '../components/LogoMark'
 import { Link, Navigate } from 'react-router-dom'
 import { ArrowRight, Plus, Minus } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
@@ -16,7 +15,7 @@ import SupportDock from '../components/SupportDock'
 const FAQ: { q: string; a: string }[] = [
   { q: 'Is this a job?', a: "No. You're an independent contractor, task by task. No shifts, no quotas. Decline anything you don't like." },
   { q: 'What exactly will I be doing?', a: 'Structured tasks scoped by your manager. Every offer shows the steps, the criteria and the amount before you accept.' },
-  { q: 'Why are stablecoins a payout option?', a: 'Cross-border businesses settle fastest with stablecoins. Prefer a digital wallet instead? Also fine. Your choice, always.' },
+  { q: 'Why are stablecoins a payout option?', a: 'Cross-border businesses settle fastest with stablecoins. Prefer PayPal? Also fine. Your choice, always.' },
   { q: 'What if something goes wrong mid-task?', a: 'Message your manager directly. A real person, not a ticket queue. Tasks can be returned, fixed and resubmitted.' },
   { q: 'Can my payout details change after I accept?', a: "No. Your payout method is snapshotted the moment you accept a task. Later edits to your profile never touch a task already in flight — the money goes exactly where it said it would." },
   { q: 'Who sees my documents?', a: 'Encrypted, and never shared with clients or other freelancers.' },
@@ -131,7 +130,7 @@ export default function Landing() {
       <header className="sticky top-0 z-30 border-b border-hair bg-paper/85 backdrop-blur">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-5 py-4">
           <Link to="/" className="flex items-center gap-2.5 font-display text-lg font-medium tracking-tight">
-            <LogoMark className="h-6 w-6 rounded-md" />
+            <img src="/logo.svg" alt="" className="h-6 w-6 rounded-md" />
             LocalTask
           </Link>
           <div className="flex items-center gap-2.5">
@@ -245,7 +244,7 @@ export default function Landing() {
             <div className="border-b border-paper/15 py-5 sm:border-0 sm:py-0">
               <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-paper/60">Paid your way</p>
               <div className="mt-2 flex flex-wrap gap-1.5">
-                {['Stablecoin', 'Bank', 'e-Wallet'].map(m => (
+                {['USDT', 'USDC', 'PayPal'].map(m => (
                   <span key={m} className="rounded-full border border-paper/30 px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider text-paper">
                     {m}
                   </span>
@@ -378,7 +377,7 @@ export default function Landing() {
         <div className="mx-auto max-w-5xl px-5 py-10 pb-28 sm:pb-10">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <p className="flex items-center gap-2 font-display text-sm font-medium tracking-tight">
-              <LogoMark className="h-5 w-5 rounded" />
+              <img src="/logo.svg" alt="" className="h-5 w-5 rounded" />
               LocalTask
             </p>
             <nav className="flex flex-wrap items-center gap-x-6 gap-y-2 font-mono text-[11px] uppercase tracking-[0.16em] text-muted">

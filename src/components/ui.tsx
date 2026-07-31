@@ -16,8 +16,8 @@ export function PageHeading({ children, sub }: { children: ReactNode; sub?: stri
   )
 }
 
-export function Card({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <div className={`rounded-xl border border-hair bg-surface ${className}`}>{children}</div>
+export function Card({ children, className = '', onClick }: { children: ReactNode; className?: string; onClick?: () => void }) {
+  return <div onClick={onClick} className={`rounded-xl border border-hair bg-surface ${className}`}>{children}</div>
 }
 
 export function Button({
@@ -25,7 +25,7 @@ export function Button({
   className = '',
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'ghost' | 'danger' }) {
-  const base = 'font-display text-sm font-medium rounded-lg px-4 py-2.5 transition disabled:opacity-50'
+  const base = 'press font-display text-sm font-medium rounded-lg px-4 py-2.5 transition disabled:opacity-50'
   const styles =
     variant === 'primary'
       ? 'bg-petrol text-paper hover:bg-petrol-hover'

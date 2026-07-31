@@ -77,8 +77,7 @@ export default function OnboardingKYC() {
       setFiles(prev => ({ ...prev, [key]: undefined }))
       return
     }
-    const inferred = f.type || (f.name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : '')
-    if (!ACCEPTED.includes(inferred)) {
+    if (!ACCEPTED.includes(f.type)) {
       setFileErrors(prev => ({ ...prev, [key]: t.errType }))
       setFiles(prev => ({ ...prev, [key]: undefined }))
       return
@@ -101,20 +100,9 @@ export default function OnboardingKYC() {
         const file = files[d.key]!
         const ext = file.name.split('.').pop() || 'jpg'
         const path = `${user.id}/${d.key}-${Date.now()}.${ext}`
-        let upErr: { message: string } | null = null
-        for (let attempt = 0; attempt < 3; attempt++) {
-          const { error: e } = await supabase.storage
-            .from('kyc-documents').upload(path, file, { upsert: true, contentType: file.type || 'application/pdf' })
-          upErr = e
-          if (!e) break
-          await new Promise(r => setTimeout(r, 800 * (attempt + 1)))
-        }
-        if (upErr) {
-          const friendly = /fetch|network|load failed/i.test(upErr.message)
-            ? 'Upload failed after retries — check your connection and try again. Large files can time out: a photo (JPG/PNG) or a compressed PDF under 10MB works best.'
-            : upErr.message
-          fail(`upload ${d.key}`, { message: friendly })
-        }
+        const { error: upErr } = await supabase.storage
+          .from('kyc-documents').upload(path, file, { upsert: true })
+        if (upErr) fail(`upload ${d.key}`, upErr)
         uploaded.push({ doc_type: d.key, storage_path: path })
       }
 

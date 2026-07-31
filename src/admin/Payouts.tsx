@@ -1,155 +1,237 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import type { PayoutRequest } from '../types/database'
-import { payoutLabel } from '../types/database'
-import type { ChainNetwork, TokenSymbol, PayoutMethod } from '../types/database'
-import { usd, dateTimeShort, shortHash } from '../lib/format'
-import { PageHeading, Card, Button, Alert } from '../components/ui'
-import { PromptDialog } from '../components/dialogs'
+import type { PayoutRequest, Profile } from '../types/database'
+import { usd, dateTimeShort } from '../lib/format'
+import { PageHeading, Card, Button, Label, Input, Alert, StatusBadge } from '../components/ui'
+import { PromptDialog } from './bits'
 import { useLang } from './i18n'
-
-interface FlLite {
-  display_name: string | null
-  payout_method: PayoutMethod
-  payout_network: ChainNetwork | null
-  payout_token: TokenSymbol | null
-  payout_address: string | null
-  payout_paypal_email: string | null
-}
-type Row = PayoutRequest & { fl: FlLite | null }
 
 const COPY = {
   zh: {
-    title: '提现', sub: 'freelancer 的统一提现工单。审核即打款:核对收款方式,打款后填凭证标记;有问题就驳回,各项自动回滚。打款即完结,freelancer 确认只是回执。',
-    tabPending: '待处理', tabPaid: '已打款待确认', tabHist: '历史',
-    owner: '归属 AM', method: '收款方式', decidedAt: '处理于', noMethod: '(未设置收款方式)',
-    pay: '打款', payQ: '打款凭证(交易哈希/参考号,可留空):', reject: '驳回', rejectQ: '驳回原因(可选):',
-    chipPending: '待打款', chipPaid: '回执未回', chipDone: '已确认', chipRejected: '已驳回',
-    refresh: '刷新', empty: '这里空空如也。', reason: '原因',
+    title: '提现',
+    sub: 'freelancer 的统一提现工单。审核即打款:核对收款方式,打款后填凭证标记;有问题就驳回,各项自动回滚。',
+    tabs: { pending: '待处理', paid: '已打款待确认', history: '历史' },
+    empty: '这里空空如也。',
+    am: '归属 AM', noAm: '无归属 · admin 兜底', fl: 'Freelancer',
+    payTo: '收款方式', noPay: '未设置收款方式', legacyDest: '历史工单·无地址快照,请人工核对后再打款',
+    items: '打包明细', bonusSignup: '注册奖励', grant7: '连续签到 7 天', grant15: '连续签到 15 天', grant30: '连续签到 30 天',
+    txRef: '打款凭证号(TXID / PP-…,可选)', note: '备注(可选,freelancer 可见)',
+    markPaid: '标记已打款', marking: '提交中…', reject: '驳回', rejectQ: '驳回原因(必填,freelancer 可见;各项将回滚为可重新申请):',
+    cancel: '取消',
+    stPending: '待处理', stPaid: '待 freelancer 确认', stDone: '已完成', stRejected: '已驳回',
+    decided: '处理于', confirmed: '确认于', reason: '原因', refWord: '凭证',
+    refresh: '刷新',
   },
   en: {
-    title: 'Payouts', sub: 'Unified payout work orders. Verify the payout method, send the money, stamp the tx ref; reject to roll everything back. Payment closes the order — freelancer confirmation is just a receipt.',
-    tabPending: 'Pending', tabPaid: 'Paid · awaiting confirm', tabHist: 'History',
-    owner: 'Owner AM', method: 'Payout method', decidedAt: 'Processed', noMethod: '(no payout method set)',
-    pay: 'Mark paid', payQ: 'Payment reference (tx hash / note, optional):', reject: 'Reject', rejectQ: 'Rejection reason (optional):',
-    chipPending: 'To pay', chipPaid: 'Receipt pending', chipDone: 'Confirmed', chipRejected: 'Rejected',
-    refresh: 'Refresh', empty: 'Nothing here.', reason: 'Reason',
+    title: 'Payouts',
+    sub: 'Unified payout requests from freelancers. Review = pay: check the payout method, send the money, record the reference — or reject with a reason and everything rolls back.',
+    tabs: { pending: 'Pending', paid: 'Sent · awaiting confirm', history: 'History' },
+    empty: 'Nothing here.',
+    am: 'AM', noAm: 'Unassigned · admin fallback', fl: 'Freelancer',
+    payTo: 'Payout method', noPay: 'No payout method set', legacyDest: 'Legacy request · no destination snapshot — verify manually before paying',
+    items: 'Bundle', bonusSignup: 'Signup bonus', grant7: '7-day streak', grant15: '15-day streak', grant30: '30-day streak',
+    txRef: 'Payment reference (TXID / PP-…, optional)', note: 'Note (optional, visible to freelancer)',
+    markPaid: 'Mark as paid', marking: 'Submitting…', reject: 'Reject', rejectQ: 'Reject reason (required, visible to the freelancer; items roll back so they can request again):',
+    cancel: 'Cancel',
+    stPending: 'Pending', stPaid: 'Awaiting freelancer confirm', stDone: 'Completed', stRejected: 'Rejected',
+    decided: 'Decided', confirmed: 'Confirmed', reason: 'Reason', refWord: 'ref',
+    refresh: 'Refresh',
   },
 }
 
-/** 提现工单(v49 合流,方案甲):待处理需动作;已打款待确认=历史的筛选视图;确认与否不阻塞。 */
-export default function AdminPayouts() {
+type Tab = 'pending' | 'paid' | 'history'
+type FlLite = Pick<Profile, 'id' | 'display_name' | 'full_name' | 'payout_method' | 'payout_network' | 'payout_token' | 'payout_address' | 'payout_paypal_email'>
+
+/** 提现工单处理台(v48):admin 与 AM 共用同一组件,RLS 自动分域(AM 只见名下,admin 全量)。 */
+export default function Payouts() {
   const { lang } = useLang()
   const t = COPY[lang]
-  const [rows, setRows] = useState<Row[]>([])
-  const [ams, setAms] = useState<Map<string, string>>(new Map())
-  const [tab, setTab] = useState<'pending' | 'paid' | 'hist'>('pending')
-  const [error, setError] = useState<string | null>(null)
+  const [tab, setTab] = useState<Tab>('pending')
+  const [rows, setRows] = useState<PayoutRequest[]>([])
+  const [fls, setFls] = useState<Map<string, FlLite>>(new Map())
+  const [amMap, setAmMap] = useState<Map<string, string>>(new Map())
+  const [loaded, setLoaded] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const [openForm, setOpenForm] = useState<string | null>(null)
+  const [tx, setTx] = useState('')
+  const [note, setNote] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
-  const [payFor, setPayFor] = useState<string | null>(null)
-  const [rejectFor, setRejectFor] = useState<string | null>(null)
+  const [rejFor, setRejFor] = useState<PayoutRequest | null>(null)
 
   const load = useCallback(async () => {
+    setErr(null)
     const [r, a] = await Promise.all([
-      supabase.from('payout_requests')
-        .select('*, fl:profiles!user_id(display_name, payout_method, payout_network, payout_token, payout_address, payout_paypal_email)')
-        .order('created_at', { ascending: false }),
+      supabase.from('payout_requests').select('*').order('created_at', { ascending: false }),
       supabase.from('account_managers').select('id, name'),
     ])
-    if (r.error) { setError(r.error.message); return }
-    setRows((r.data ?? []) as unknown as Row[])
-    setAms(new Map(((a.data ?? []) as { id: string; name: string }[]).map(x => [x.id, x.name])))
+    if (r.error) { setErr(r.error.message); setLoaded(true); return }
+    const list = (r.data ?? []) as PayoutRequest[]
+    setRows(list)
+    setAmMap(new Map(((a.data ?? []) as { id: string; name: string }[]).map(x => [x.id, x.name])))
+    const ids = Array.from(new Set(list.map(x => x.user_id)))
+    if (ids.length > 0) {
+      const { data } = await supabase.from('profiles')
+        .select('id, display_name, full_name, payout_method, payout_network, payout_token, payout_address, payout_paypal_email')
+        .in('id', ids)
+      setFls(new Map(((data ?? []) as FlLite[]).map(x => [x.id, x])))
+    }
+    setLoaded(true)
   }, [])
   useEffect(() => { void load() }, [load])
 
-  async function act(kind: 'pay' | 'reject', id: string, input?: string) {
-    setBusy(id); setError(null)
-    const { error: e } = kind === 'pay'
-      ? await supabase.rpc('payout_mark_paid', { p_id: id, p_tx: input?.trim() || null })
-      : await supabase.rpc('payout_reject', { p_id: id, p_reason: input?.trim() || null })
+  async function markPaid(id: string) {
+    setBusy(id); setErr(null)
+    const { error: e } = await supabase.rpc('payout_mark_paid', {
+      p_request: id, p_tx_ref: tx.trim() || null, p_note: note.trim() || null,
+    })
     setBusy(null)
-    if (e) { setError(e.message); return }
+    if (e) { setErr(e.message); return }
+    setOpenForm(null); setTx(''); setNote('')
     await load()
   }
 
-  const pending = rows.filter(r => r.status === 'pending')
-  const paid = rows.filter(r => r.status === 'paid_pending_confirm')
-  const hist = rows.filter(r => r.status !== 'pending')
-  const shown = tab === 'pending' ? pending : tab === 'paid' ? paid : hist
+  async function doReject(reason: string) {
+    const r = rejFor; setRejFor(null)
+    if (!r) return
+    setBusy(r.id); setErr(null)
+    const { error: e } = await supabase.rpc('payout_reject', { p_request: r.id, p_reason: reason })
+    setBusy(null)
+    if (e) { setErr(e.message); return }
+    await load()
+  }
 
-  const methodText = (fl: FlLite | null) => {
-    if (!fl) return t.noMethod
-    if (fl.payout_method === 'paypal' && fl.payout_paypal_email) return `PayPal · ${fl.payout_paypal_email}`
-    if (fl.payout_network && fl.payout_token && fl.payout_address)
-      return `${payoutLabel(fl.payout_network, fl.payout_token)} · ${fl.payout_address}`
-    return t.noMethod
+  const itemLabel = (i: { kind: string; label: string }) =>
+    i.kind === 'signup' ? t.bonusSignup
+    : i.kind === 'grant' ? (i.label === 'streak_7' ? t.grant7 : i.label === 'streak_15' ? t.grant15 : i.label === 'streak_30' ? t.grant30 : i.label)
+    : i.label
+
+  const flName = (id: string) => {
+    const f = fls.get(id)
+    return f?.display_name || f?.full_name || id.slice(0, 8)
   }
-  const chip = (s: Row['status']) => {
-    const map = {
-      pending: ['border-pending-border bg-pending-bg text-pending-text', t.chipPending],
-      paid_pending_confirm: ['border-hair bg-white text-faint', t.chipPaid],
-      completed: ['border-verified-border bg-verified-bg text-verified-text', t.chipDone],
-      rejected: ['border-danger-border bg-danger-bg text-danger-text', t.chipRejected],
-    } as const
-    const [cls, label] = map[s]
-    return <span className={`inline-flex items-center rounded-full border px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider ${cls}`}>{label}</span>
+  /** m34:一律读工单里冻结的收款快照;历史工单(无快照)明确标注,不再回落到用户当前地址。 */
+  const payLine = (r: PayoutRequest) => {
+    if (!r.dest_snapshot_at) return t.legacyDest
+    if (r.payout_method === 'paypal') return r.payout_paypal_email ? `PayPal · ${r.payout_paypal_email}` : t.noPay
+    if (!r.payout_address) return t.noPay
+    return `${(r.payout_token ?? '').toUpperCase()} · ${(r.payout_network ?? '').toUpperCase()} · ${r.payout_address}`
   }
+
+  const filtered = rows.filter(r =>
+    tab === 'pending' ? r.status === 'pending'
+    : tab === 'paid' ? r.status === 'paid_pending_confirm'
+    : r.status === 'completed' || r.status === 'rejected')
+
+  const counts: Record<Tab, number> = {
+    pending: rows.filter(r => r.status === 'pending').length,
+    paid: rows.filter(r => r.status === 'paid_pending_confirm').length,
+    history: rows.filter(r => r.status === 'completed' || r.status === 'rejected').length,
+  }
+
+  if (!loaded) return <div className="text-muted">…</div>
 
   return (
-    <div>
-      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+    <div className="mx-auto max-w-3xl">
+      <div className="flex items-start justify-between gap-4">
         <PageHeading sub={t.sub}>{t.title}</PageHeading>
-        <Button variant="ghost" className="px-3.5 py-1.5 text-xs" onClick={() => void load()}>{t.refresh}</Button>
+        <Button variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => void load()}>{t.refresh}</Button>
       </div>
-      {error && <Alert tone="error">{error}</Alert>}
-      <div className="mb-5 flex flex-wrap gap-2.5">
-        {/* 已打款页签不带数字:打款即完结,回执与否不是待办(方案甲) */}
-        {([['pending', t.tabPending, pending.length], ['paid', t.tabPaid, null], ['hist', t.tabHist, hist.length]] as const).map(([k, label, n]) => (
+      {err && <Alert tone="error">{err}</Alert>}
+
+      <div className="mb-4 flex gap-2">
+        {(['pending', 'paid', 'history'] as Tab[]).map(k => (
           <button key={k} onClick={() => setTab(k)}
-            className={`rounded-full border px-3.5 py-1.5 font-mono text-[11px] uppercase tracking-wider transition ${tab === k ? 'border-petrol bg-petrol text-paper' : 'border-hair bg-white text-muted hover:text-ink'}`}>
-            {label}{n !== null ? ` · ${n}` : ''}
+            className={`rounded-full border px-3.5 py-1.5 font-mono text-[11px] uppercase tracking-wider transition ${
+              tab === k ? 'border-petrol bg-petrol text-paper' : 'border-hair bg-white text-muted hover:text-ink'}`}>
+            {t.tabs[k]}{counts[k] > 0 && ` · ${counts[k]}`}
           </button>
         ))}
       </div>
+
       <Card className="p-5">
-        {shown.length === 0 && <p className="py-6 text-center text-sm text-faint">{t.empty}</p>}
-        <div className="space-y-5">
-          {shown.map(r => (
-            <div key={r.id} className="border-b border-hair pb-5 last:border-b-0 last:pb-0">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-ink">{r.fl?.display_name ?? '—'} <span className="ml-1 font-mono">{usd(Number(r.total))}</span></p>
-                  <p className="mt-1 font-mono text-[11px] text-faint">{dateTimeShort(r.created_at)} · {t.owner}: {r.am_id ? ams.get(r.am_id) ?? '—' : '—'}</p>
-                  <p className="mt-1.5 break-all font-mono text-[11px] text-muted">{t.method}: {methodText(r.fl)}</p>
-                  <div className="mt-1.5 space-y-0.5">
-                    {r.items.map((it, i) => (
-                      <p key={i} className="flex items-baseline justify-between gap-4 font-mono text-[11px] text-muted">
-                        <span className="truncate">{it.label}</span><span className="shrink-0 text-ink">{usd(Number(it.amount))}</span>
-                      </p>
-                    ))}
-                  </div>
-                  {r.tx_ref && <p className="mt-1.5 font-mono text-[11px] text-faint">tx: {shortHash(r.tx_ref)}</p>}
-                  {r.reject_reason && <p className="mt-1.5 font-mono text-[11px] text-danger-text">{t.reason}: {r.reject_reason}</p>}
-                  {r.decided_at && <p className="mt-1 font-mono text-[10px] text-faint">{t.decidedAt} {dateTimeShort(r.decided_at)}</p>}
-                </div>
-                <div className="flex shrink-0 flex-col items-end gap-2">
-                  {r.status === 'pending' ? (
-                    <>
-                      <Button className="px-3.5 py-1.5 text-xs" disabled={busy === r.id} onClick={() => setPayFor(r.id)}>{busy === r.id ? '…' : t.pay}</Button>
-                      <Button variant="ghost" className="px-3.5 py-1.5 text-xs" disabled={busy === r.id} onClick={() => setRejectFor(r.id)}>{t.reject}</Button>
-                    </>
-                  ) : chip(r.status)}
-                </div>
+        {filtered.length === 0 ? (
+          <p className="py-2 text-center text-sm text-faint">{t.empty}</p>
+        ) : filtered.map(r => (
+          <div key={r.id} className="border-b border-hair py-4 first:pt-1 last:border-b-0 last:pb-1">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-ink">
+                  {flName(r.user_id)}
+                  <span className="ml-2 font-display text-base tracking-tight">{usd(r.total)}</span>
+                </p>
+                <p className="mt-0.5 font-mono text-[11px] text-faint">
+                  {dateTimeShort(r.created_at)} · {t.am}: {r.am_id ? (amMap.get(r.am_id) ?? r.am_id.slice(0, 6)) : t.noAm}
+                </p>
               </div>
+              <StatusBadge
+                status={r.status === 'completed' ? 'verified' : r.status === 'rejected' ? 'unverified' : 'pending'}
+                label={r.status === 'pending' ? t.stPending : r.status === 'paid_pending_confirm' ? t.stPaid : r.status === 'completed' ? t.stDone : t.stRejected}
+              />
             </div>
-          ))}
-        </div>
+
+            <p className="mt-2 break-all font-mono text-[11px] text-muted">{t.payTo}: {payLine(r)}</p>
+
+            <div className="mt-2 space-y-0.5">
+              {r.items.map((i, idx) => (
+                <p key={idx} className="flex items-baseline justify-between gap-3 font-mono text-[11px] text-muted">
+                  <span className="truncate">{itemLabel(i)}</span>
+                  <span className="shrink-0">{usd(i.amount)}</span>
+                </p>
+              ))}
+            </div>
+
+            {(r.tx_ref || r.note) && (
+              <p className="mt-2 font-mono text-[11px] text-faint">
+                {r.tx_ref && <>{t.refWord} {r.tx_ref}</>}
+                {r.tx_ref && r.note && ' · '}
+                {r.note}
+              </p>
+            )}
+            {r.status === 'rejected' && r.reject_reason && (
+              <p className="mt-1.5 text-xs text-muted">{t.reason}: {r.reject_reason}</p>
+            )}
+            {r.decided_at && r.status !== 'pending' && (
+              <p className="mt-1 font-mono text-[11px] text-faint">
+                {t.decided} {dateTimeShort(r.decided_at)}
+                {r.confirmed_at && <> · {t.confirmed} {dateTimeShort(r.confirmed_at)}</>}
+              </p>
+            )}
+
+            {r.status === 'pending' && (
+              openForm === r.id ? (
+                <div className="mt-3 rounded-xl border border-hair bg-paper p-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div><Label>{t.txRef}</Label><Input value={tx} onChange={e => setTx(e.target.value)} className="font-mono text-xs" /></div>
+                    <div><Label>{t.note}</Label><Input value={note} onChange={e => setNote(e.target.value)} /></div>
+                  </div>
+                  <div className="mt-3 flex gap-2">
+                    <Button className="px-4 py-2 text-xs" disabled={busy === r.id} onClick={() => void markPaid(r.id)}>
+                      {busy === r.id ? t.marking : t.markPaid}
+                    </Button>
+                    <Button variant="ghost" className="px-4 py-2 text-xs" onClick={() => { setOpenForm(null); setTx(''); setNote('') }}>{t.cancel}</Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-3 flex gap-2">
+                  <Button className="px-4 py-2 text-xs" onClick={() => { setOpenForm(r.id); setTx(''); setNote('') }}>{t.markPaid}</Button>
+                  <Button variant="ghost" className="px-4 py-2 text-xs" disabled={busy === r.id} onClick={() => setRejFor(r)}>{t.reject}</Button>
+                </div>
+              )
+            )}
+          </div>
+        ))}
       </Card>
 
-      <PromptDialog open={payFor !== null} title={t.pay} hint={t.payQ} confirmLabel={t.pay} cancelLabel="—"
-        onConfirm={v => { const id = payFor!; setPayFor(null); void act('pay', id, v) }} onClose={() => setPayFor(null)} />
-      <PromptDialog open={rejectFor !== null} title={t.reject} hint={t.rejectQ} confirmLabel={t.reject} cancelLabel="—" danger
-        onConfirm={v => { const id = rejectFor!; setRejectFor(null); void act('reject', id, v) }} onClose={() => setRejectFor(null)} />
+      <PromptDialog
+        open={!!rejFor}
+        title={t.reject}
+        hint={t.rejectQ}
+        confirmLabel={t.reject}
+        cancelLabel={t.cancel}
+        danger
+        onConfirm={v => void doReject(v)}
+        onClose={() => setRejFor(null)}
+      />
     </div>
   )
 }

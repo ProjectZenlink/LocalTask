@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Bell as BellIcon } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { Link } from 'react-router-dom'
@@ -13,12 +13,12 @@ type ReopenRow = AcceptanceRow & { freelancer: { display_name: string | null } |
 const COPY = {
   zh: {
     expiring: '手机号即将到期', none: '暂无提醒,也没有未完成的备忘。', reopened: '跳审核待处理', goBoard: '去处理',
-    memos: '备忘录', add: '添加', placeholder: '例:明天联系 James 处理开户',
+    memos: '备忘录', add: '添加', placeholder: '例:明天联系 James 做 Shopify',
     daysLeft: (d: number) => d <= 0 ? '今天到期' : `${d} 天后到期`,
   },
   en: {
     expiring: 'Phone numbers expiring', none: 'No reminders and no open memos.', reopened: 'Flagged accounts', goBoard: 'Handle',
-    memos: 'Memos', add: 'Add', placeholder: 'e.g. Ping James about the onboarding tomorrow',
+    memos: 'Memos', add: 'Add', placeholder: 'e.g. Ping James about Shopify tomorrow',
     daysLeft: (d: number) => d <= 0 ? 'expires today' : `expires in ${d}d`,
   },
 }
@@ -75,8 +75,20 @@ export default function Bell({ amId }: { amId: string }) {
     await load()
   }
 
+  const rootRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey) }
+  }, [open])
+
   return (
-    <div className="relative">
+    <div ref={rootRef} className="relative">
       <button onClick={() => setOpen(v => !v)} className="relative rounded-lg border border-hair p-1.5 text-muted transition hover:text-ink">
         <BellIcon size={16} strokeWidth={1.75} />
         {badge > 0 && (

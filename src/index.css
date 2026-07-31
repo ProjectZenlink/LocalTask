@@ -71,26 +71,19 @@ body {
 html { scroll-behavior: smooth; }
 ::selection { background: #244B4D; color: #F2EFE8; }
 
-/* v50 · 里程碑与微动效 */
-@keyframes ms-rise { from { opacity: 0; transform: translateY(18px) scale(.97); } to { opacity: 1; transform: none; } }
-@keyframes ms-draw { to { stroke-dashoffset: 0; } }
-@keyframes ms-halo { 0% { transform: scale(.6); opacity: .45; } 100% { transform: scale(1.5); opacity: 0; } }
-@keyframes ms-fade { from { opacity: 0; } to { opacity: 1; } }
-.ms-rise { animation: ms-rise .5s var(--ease-ld) both; }
-.ms-fade { animation: ms-fade .3s ease both; }
-.ms-check { stroke-dasharray: 60; stroke-dashoffset: 60; animation: ms-draw .7s .25s var(--ease-ld) forwards; }
-.ms-ring  { stroke-dasharray: 190; stroke-dashoffset: 190; animation: ms-draw .8s var(--ease-ld) forwards; }
-.ms-halo  { animation: ms-halo 1.6s .5s ease-out infinite; }
-.fold-wrap { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .35s var(--ease-ld); }
-.fold-wrap.open { grid-template-rows: 1fr; }
-.fold-inner { overflow: hidden; min-height: 0; }
-@media (prefers-reduced-motion: reduce) {
-  .ms-rise, .ms-fade, .ms-check, .ms-ring, .ms-halo { animation: none; }
-  .ms-check, .ms-ring { stroke-dashoffset: 0; }
-  .fold-wrap { transition: none; }
+/* ============ v49 Freelancer 动效基元 ============ */
+@keyframes v49-shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+.skl {
+  border-radius: 0.75rem;
+  background: linear-gradient(100deg, var(--color-hair) 40%, #EFEBE1 50%, var(--color-hair) 60%);
+  background-size: 200% 100%;
+  animation: v49-shimmer 1.6s ease-in-out infinite;
 }
-
-/* v51 · 直达定位高亮 */
-@keyframes focus-flash { 0% { box-shadow: 0 0 0 0 rgba(36,75,77,.45); } 70% { box-shadow: 0 0 0 8px rgba(36,75,77,0); } 100% { box-shadow: 0 0 0 0 rgba(36,75,77,0); } }
-.focus-flash { animation: focus-flash 1.6s ease 2; border-radius: 12px; }
-@media (prefers-reduced-motion: reduce) { .focus-flash { animation: none; outline: 2px solid rgba(36,75,77,.5); } }
+@keyframes v49-breathe { 0%, 100% { box-shadow: 0 0 0 0 rgba(242, 239, 232, .35); } 55% { box-shadow: 0 0 0 8px rgba(242, 239, 232, 0); } }
+.v49-breathe { animation: v49-breathe 1.8s ease-in-out infinite; }
+.press { transition: transform .12s var(--ease-ld); }
+.press:active { transform: scale(.975); }
+@media (prefers-reduced-motion: reduce) {
+  .skl, .v49-breathe { animation: none !important; }
+  .press:active { transform: none; }
+}
