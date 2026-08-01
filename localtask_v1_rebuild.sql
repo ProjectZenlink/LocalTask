@@ -4359,9 +4359,178 @@ create policy st_sticker_del on storage.objects for delete
          and (public.is_admin() or public.is_am()));
 
 
+
+
+
+-- ================================================================
+-- m47 合并块:渠道与邀请码(source · 一客一码 · 邮箱回填 · last_message_id · 头像基建)
+-- ================================================================
+-- 1. 线索来源维度(渠道分账):join=落地页 / whatsapp=广告表单邀请
+alter table public.leads add column if not exists source text not null default 'join'
+  constraint lead_source_chk check (source in ('join', 'whatsapp'));
+create index if not exists idx_leads_source on public.leads (source);
+
+-- WA 邀请生成时尚无客户号码 → wa 允许为空,但仅限 whatsapp 来源;join 保持必填+E.164
+alter table public.leads alter column wa_e164 drop not null;
+alter table public.leads drop constraint if exists lead_wa_shape;
+alter table public.leads add constraint lead_wa_shape check (
+  (wa_e164 is null and source = 'whatsapp')
+  or (wa_e164 is not null and wa_e164 ~ '^\+[1-9][0-9]{6,14}$')
+);
+
+-- 2. 一客一码邀请(决策1A):生成即有主、生而 contacted(认领池只收 new,天然进不去);
+--    备注即占位名,转化后前端换真人;销毁仅限未转化(本人或 admin)
+create or replace function public.am_create_invite(p_note text)
+returns json language plpgsql security definer set search_path = public as $$
+declare
+  v_me uuid := public.current_am_id();
+  v_note text := btrim(coalesce(p_note, ''));
+  v_id uuid; v_tok uuid;
+begin
+  if v_me is null then raise exception '仅账户经理可生成邀请。'; end if;
+  if char_length(v_note) < 1 or char_length(v_note) > 60 then
+    raise exception '请填写 1–60 字的客户备注。';
+  end if;
+  insert into public.leads (full_name, wa_e164, source, status, assigned_am, assigned_at)
+  values (v_note, null, 'whatsapp', 'contacted', v_me, now())
+  returning id, ref_token into v_id, v_tok;
+  return json_build_object('ok', true, 'id', v_id, 'ref_token', v_tok);
+end $$;
+
+create or replace function public.am_destroy_invite(p_lead uuid)
+returns json language plpgsql security definer set search_path = public as $$
+declare
+  v_l public.leads%rowtype;
+begin
+  select * into v_l from public.leads where id = p_lead for update;
+  if not found then raise exception '邀请不存在。'; end if;
+  if v_l.source <> 'whatsapp' then raise exception '仅 WhatsApp 邀请可销毁。'; end if;
+  if v_l.status = 'converted' then raise exception '已转化的邀请不可销毁。'; end if;
+  if not (public.is_admin() or v_l.assigned_am = public.current_am_id()) then
+    raise exception '只能销毁自己生成的邀请。';
+  end if;
+  delete from public.leads where id = p_lead;
+  return json_build_object('ok', true);
+end $$;
+
+revoke execute on function public.am_create_invite(text) from public, anon;
+grant  execute on function public.am_create_invite(text) to authenticated, service_role;
+revoke execute on function public.am_destroy_invite(uuid) from public, anon;
+grant  execute on function public.am_destroy_invite(uuid) to authenticated, service_role;
+
+-- 3. 转化时回填注册邮箱(WA 邀请与 join 线索通用;handle_new_user 整函数重写)
+create or replace function public.handle_new_user()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  v_role public.user_role := 'user';
+  v_code text;
+  v_ref  uuid;
+  v_lead public.leads%rowtype;
+begin
+  -- m42:匿名会话(访客线索)→ 建 lead 档;跳过邮箱域名检查与员工码逻辑
+  if new.email is null or btrim(new.email::text) = '' then
+    insert into public.profiles (id, role)
+    values (new.id, 'lead')
+    on conflict (id) do nothing;
+    return new;
+  end if;
+
+  if not public.email_domain_allowed(new.email::text) then
+    raise exception 'Disposable email domains are not allowed. Please sign up with a real inbox.';
+  end if;
+
+  if coalesce(new.raw_user_meta_data ->> 'staff_code', '') <> '' then
+    select value into v_code from public.app_settings where key = 'staff_invite_code';
+    if v_code is not null and new.raw_user_meta_data ->> 'staff_code' = v_code then
+      v_role := 'pending';
+    end if;
+  end if;
+  insert into public.profiles (id, display_name, role, email)
+  values (new.id, new.raw_user_meta_data ->> 'display_name', v_role, new.email)
+  on conflict (id) do nothing;
+
+  -- m42:专属注册链接携带 lead_ref → 线索转化 + 归属绑定(跨设备生效)
+  begin
+    v_ref := nullif(btrim(coalesce(new.raw_user_meta_data ->> 'lead_ref', '')), '')::uuid;
+  exception when others then
+    v_ref := null;
+  end;
+  if v_ref is not null and v_role = 'user' then
+    select * into v_lead from public.leads
+     where ref_token = v_ref and status <> 'converted';
+    if found then
+      update public.leads
+         set status = 'converted', converted_profile = new.id, converted_at = now(),
+             email = coalesce(nullif(btrim(new.email::text), ''), email)  -- m47:注册邮箱回填
+       where id = v_lead.id;
+      if v_lead.assigned_am is not null then
+        update public.profiles set managed_by = v_lead.assigned_am where id = new.id;
+      end if;
+    end if;
+  end if;
+
+  return new;
+end $$;
+
+-- 4. 会话列表 v3:补 last_message_id(左栏最后一句走翻译缓存;json 加列不换签名)
+create or replace function public.list_conversations()
+returns json language sql stable security definer set search_path = public as $$
+  select coalesce(json_agg(row_to_json(x)), '[]'::json) from (
+    select c.id,
+      case when c.a = auth.uid() then c.b else c.a end                          as other_id,
+      op.display_name                                                          as other_name,
+      op.role                                                                  as other_role,
+      case when op.role = 'lead'
+           then (select le.email from public.leads le where le.profile_id = op.id)
+           else op.email end                                                   as other_email,
+      c.last_message_at,
+      (select id from public.messages m where m.conversation_id = c.id
+        order by m.created_at desc limit 1)                                    as last_message_id,
+      (select body from public.messages m where m.conversation_id = c.id
+        order by m.created_at desc limit 1)                                    as last_body,
+      (select count(*) from public.messages m where m.conversation_id = c.id
+        and m.sender_id <> auth.uid()
+        and m.created_at > coalesce(r.read_at, 'epoch'::timestamptz))::int     as unread,
+      public.line_active(c.a, c.b)                                             as active
+    from public.conversations c
+    join public.profiles op on op.id = case when c.a = auth.uid() then c.b else c.a end
+    left join public.message_reads r on r.conversation_id = c.id and r.user_id = auth.uid()
+    where c.a = auth.uid() or c.b = auth.uid()
+    order by c.last_message_at desc
+  ) x
+$$;
+
+-- 5. 头像基建(A2):v0 遗产未随 v1 重建,本批补齐。
+--    公开桶 avatars(≤2MB·JPG/PNG/WebP,桶级硬限);本人目录可传/改/删;
+--    公开读走 public URL(头像低敏,免签名 URL 抖动);profiles.avatar_url 本人可改
+--    (protect_profiles 黑白名单均不含此列,自更新天然放行)。
+alter table public.profiles add column if not exists avatar_url text;
+do $$
+begin
+  insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+  values ('avatars', 'avatars', true, 2097152, array['image/jpeg','image/png','image/webp'])
+  on conflict (id) do update
+    set public = true, file_size_limit = 2097152,
+        allowed_mime_types = array['image/jpeg','image/png','image/webp'];
+exception when others then
+  raise notice '[跳过] 头像桶写入被拦:%', sqlerrm;
+end $$;
+drop policy if exists st_avatar_ins on storage.objects;
+create policy st_avatar_ins on storage.objects for insert
+  with check (bucket_id = 'avatars'
+              and (storage.foldername(name))[1] = auth.uid()::text);
+drop policy if exists st_avatar_upd on storage.objects;
+create policy st_avatar_upd on storage.objects for update
+  using (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text)
+  with check (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+drop policy if exists st_avatar_del on storage.objects;
+create policy st_avatar_del on storage.objects for delete
+  using (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+
+
 -- 11. 自检输出（跑完看这个结果）
 --     期望：tables = 34，enums = 11，public_policies = 79，storage = 15  (m44 基线)
---           storage_policies = 18，buckets = 4  (m46)
+--           storage_policies = 21，buckets = 5  (m47)
 -- ----------------------------------------------------------------
 
 select
@@ -4373,7 +4542,7 @@ select
   (select count(*) from pg_policies where schemaname = 'public')                       as public_policies,
   (select count(*) from pg_policies where schemaname = 'storage')                      as storage_policies,
   (select count(*) from storage.buckets
-    where id in ('kyc-documents', 'task-attachments', 'chat-attachments', 'chat-stickers'))                                 as buckets;
+    where id in ('kyc-documents', 'task-attachments', 'chat-attachments', 'chat-stickers', 'avatars'))                                 as buckets;
 
 -- ================================================================
 -- 前端契约备忘（模块 2/3 按此实现，不用现在做任何事）
