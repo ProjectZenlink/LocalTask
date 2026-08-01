@@ -4242,9 +4242,126 @@ alter table public.leads add column if not exists email text
 create index if not exists idx_leads_email on public.leads (lower(email));
 
 
+
+-- ================================================================
+-- m46 合并块:消息增强批(会话/名录挂邮箱 · 个人贴纸库)
+-- ================================================================
+-- 1. 会话列表 v2(② 搜索与邮箱展示):新增 other_email —— freelancer/员工取 profiles.email,
+--    访客取 leads.email(v68 收集);json 返回,加列不换签名,执行权原样保留
+create or replace function public.list_conversations()
+returns json language sql stable security definer set search_path = public as $$
+  select coalesce(json_agg(row_to_json(x)), '[]'::json) from (
+    select c.id,
+      case when c.a = auth.uid() then c.b else c.a end                          as other_id,
+      op.display_name                                                          as other_name,
+      op.role                                                                  as other_role,
+      case when op.role = 'lead'
+           then (select le.email from public.leads le where le.profile_id = op.id)
+           else op.email end                                                   as other_email,
+      c.last_message_at,
+      (select body from public.messages m where m.conversation_id = c.id
+        order by m.created_at desc limit 1)                                    as last_body,
+      (select count(*) from public.messages m where m.conversation_id = c.id
+        and m.sender_id <> auth.uid()
+        and m.created_at > coalesce(r.read_at, 'epoch'::timestamptz))::int     as unread,
+      public.line_active(c.a, c.b)                                             as active
+    from public.conversations c
+    join public.profiles op on op.id = case when c.a = auth.uid() then c.b else c.a end
+    left join public.message_reads r on r.conversation_id = c.id and r.user_id = auth.uid()
+    where c.a = auth.uid() or c.b = auth.uid()
+    order by c.last_message_at desc
+  ) x
+$$;
+
+-- 2. 名录 v2:员工视角的 freelancer/lead 条目挂 email(搜索与展示同源);
+--    员工互见与访客/自由职业者视角不挂(无业务必要,少暴露少风险)
+create or replace function public.message_targets()
+returns json language plpgsql stable security definer set search_path = public as $$
+declare
+  v_uid uuid := auth.uid();
+  v_role public.user_role;
+begin
+  select role into v_role from public.profiles where id = v_uid;
+  if v_role = 'lead' then
+    return (select coalesce(json_agg(json_build_object(
+      'id', a.user_id, 'name', a.name, 'role', 'am')), '[]'::json)
+      from public.leads l join public.account_managers a on a.id = l.assigned_am
+      where l.profile_id = v_uid and a.user_id is not null);
+  elsif v_role = 'user' then
+    return (select coalesce(json_agg(json_build_object(
+      'id', a.user_id, 'name', a.name, 'role', 'am')), '[]'::json)
+      from public.profiles p join public.account_managers a on a.id = p.managed_by
+      where p.id = v_uid and a.user_id is not null);
+  elsif v_role = 'am' then
+    return (select coalesce(json_agg(t), '[]'::json) from (
+      select p.id, p.display_name as name, 'freelancer' as role, p.email
+        from public.profiles p
+        join public.account_managers me on me.user_id = v_uid
+        where p.managed_by = me.id and p.role = 'user'
+      union all
+      select l.profile_id, l.full_name, 'lead', l.email
+        from public.leads l
+        join public.account_managers me2 on me2.user_id = v_uid
+        where l.assigned_am = me2.id and l.profile_id is not null and l.status <> 'converted'
+      union all
+      select a.user_id, a.name, 'am', null::text from public.account_managers a
+        where a.is_active and a.user_id is not null and a.user_id <> v_uid
+      union all
+      select p.id, coalesce(p.display_name, 'Admin'), 'admin', null::text from public.profiles p
+        where p.role = 'admin'
+      order by role, name
+    ) t);
+  elsif v_role = 'admin' then
+    return (select coalesce(json_agg(t), '[]'::json) from (
+      select p.id, coalesce(p.display_name, p.full_name, left(p.id::text, 8)) as name,
+        case p.role when 'user' then 'freelancer' else p.role::text end as role,
+        case when p.role = 'lead'
+             then (select le.email from public.leads le where le.profile_id = p.id)
+             else p.email end as email
+      from public.profiles p where p.id <> v_uid
+      order by role, name
+    ) t);
+  end if;
+  return '[]'::json;
+end $$;
+
+-- 3. 个人贴纸库(③,仅员工):私有桶 chat-stickers,路径 {uid}/{file};
+--    桶级硬限制:单张 ≤2MB、仅图片四型(服务端强制,非仅前端);
+--    读取严格仅本人(admin 亦不可窥,与快捷话术同款纪律);上传/删除须员工身份。
+--    发送时前端将贴纸复制为普通图片附件走 v64 全链,消息侧零新面。
+do $$
+begin
+  insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+  values ('chat-stickers', 'chat-stickers', false, 2097152,
+          array['image/jpeg','image/png','image/webp','image/gif'])
+  on conflict (id) do update
+    set public = false, file_size_limit = 2097152,
+        allowed_mime_types = array['image/jpeg','image/png','image/webp','image/gif'];
+exception when others then
+  raise notice '[跳过] 贴纸桶写入被拦:%', sqlerrm;
+end $$;
+
+drop policy if exists st_sticker_ins on storage.objects;
+create policy st_sticker_ins on storage.objects for insert
+  with check (
+    bucket_id = 'chat-stickers'
+    and (storage.foldername(name))[1] = auth.uid()::text
+    and (public.is_admin() or public.is_am())
+  );
+drop policy if exists st_sticker_sel on storage.objects;
+create policy st_sticker_sel on storage.objects for select
+  using (bucket_id = 'chat-stickers'
+         and (storage.foldername(name))[1] = auth.uid()::text);
+drop policy if exists st_sticker_del on storage.objects;
+create policy st_sticker_del on storage.objects for delete
+  using (bucket_id = 'chat-stickers'
+         and (storage.foldername(name))[1] = auth.uid()::text
+         and (public.is_admin() or public.is_am()));
+
+
 -- 11. 自检输出（跑完看这个结果）
 --     期望：tables = 34，enums = 11，public_policies = 79，storage = 15  (m44 基线)
---           storage_policies = 15，buckets = 3  (m44)
+--           storage_policies = 18，buckets = 4  (m46)
 -- ----------------------------------------------------------------
 
 select
@@ -4256,7 +4373,7 @@ select
   (select count(*) from pg_policies where schemaname = 'public')                       as public_policies,
   (select count(*) from pg_policies where schemaname = 'storage')                      as storage_policies,
   (select count(*) from storage.buckets
-    where id in ('kyc-documents', 'task-attachments', 'chat-attachments'))                                 as buckets;
+    where id in ('kyc-documents', 'task-attachments', 'chat-attachments', 'chat-stickers'))                                 as buckets;
 
 -- ================================================================
 -- 前端契约备忘（模块 2/3 按此实现，不用现在做任何事）
