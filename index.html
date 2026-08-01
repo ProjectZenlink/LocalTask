@@ -39,12 +39,13 @@
     fbq('init', '1978775742776267');
     fbq('track', 'PageView');
     </script>
-    <noscript><img height="1" width="1" style="display:none"
-    src="https://www.facebook.com/tr?id=1978775742776267&ev=PageView&noscript=1"
-    /></noscript>
     <!-- End Meta Pixel Code -->
   </head>
   <body>
+    <!-- Meta Pixel noscript 兜底(规范要求置于 body;Vite7 严格解析) -->
+    <noscript><img height="1" width="1" style="display:none"
+      src="https://www.facebook.com/tr?id=1978775742776267&ev=PageView&noscript=1"
+    /></noscript>
     <div id="root"><div id="lt-splash"><div class="m">L</div><div class="d"></div></div></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
