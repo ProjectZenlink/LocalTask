@@ -82,7 +82,7 @@ function JoinInner() {
     void supabase.rpc('support_profile_id').then(({ data }) => {
       if (typeof data === 'string') setSupUid(data)
     })
-  }, [])
+  }, [user?.id])  // v68.2:登录完成后补取一次(匿名态该查询按设计返回空)
 
   const [name, setName] = useState('')
   const [cc, setCc] = useState('1')
@@ -308,7 +308,7 @@ function JoinInner() {
               </div>
             )}
 
-            {(lead.assigned_am || (!converted && supUid)) && (
+            {(lead.assigned_am || (!converted && (supUid || fastConv))) && (
               <div className="overflow-hidden rounded-2xl border border-hair bg-white shadow-sm">
                 <div className="flex items-center gap-3 border-b border-hair bg-surface px-4 py-3">
                   <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-petrol font-display text-sm font-medium text-paper">
@@ -321,7 +321,7 @@ function JoinInner() {
                 </div>
                 <div className="h-[62vh] min-h-[24rem]">
                   {liveConv && user ? (
-                    <LeadChat conversationId={liveConv} meId={user.id} otherId={chatTarget ?? null} lang={lang} readOnly={converted} />
+                    <LeadChat conversationId={liveConv} meId={user.id} otherId={chatTarget || null} lang={lang} readOnly={converted} />
                   ) : (
                     <p className="pt-16 text-center text-sm text-faint">…</p>
                   )}
