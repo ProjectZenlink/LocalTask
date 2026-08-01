@@ -4677,6 +4677,15 @@ create trigger trg_zzz_kyc_adopt before update of kyc_status on public.profiles
   for each row execute function public.kyc_adopt();
 
 
+
+
+-- ================================================================
+-- m49 合并块:安全体检微批(kyc_adopt 直调权收回;生产幽灵加固在迁移侧条件执行)
+-- ================================================================
+-- 主线共用段:收回 kyc_adopt 触发器函数直调权(m48 新建时未收,默认 PUBLIC)
+revoke execute on function public.kyc_adopt() from public, anon, authenticated;
+
+
 -- 11. 自检输出（跑完看这个结果）
 --     期望：tables = 35，enums = 11，public_policies = 80，storage = 15  (m44 基线)
 --           storage_policies = 21，buckets = 5  (m47)
