@@ -4528,8 +4528,157 @@ create policy st_avatar_del on storage.objects for delete
   using (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
 
 
+
+
+-- ================================================================
+-- m48 合并块:消息体验批Ⅲ(偏好三件 · 撤回 · 列表 v4 · 静音红点 · KYC 收编)
+-- ================================================================
+-- 1. 会话偏好(⑥ 置顶/静音/标记未读):一人一会话一行,严格仅本人
+create table if not exists public.conversation_prefs (
+  user_id         uuid not null references public.profiles(id) on delete cascade,
+  conversation_id uuid not null references public.conversations(id) on delete cascade,
+  pinned_at       timestamptz,
+  muted           boolean not null default false,
+  manual_unread   boolean not null default false,
+  updated_at      timestamptz not null default now(),
+  primary key (user_id, conversation_id)
+);
+drop trigger if exists trg_cprefs_touch on public.conversation_prefs;
+create trigger trg_cprefs_touch before update on public.conversation_prefs
+  for each row execute function public.touch_updated_at();
+alter table public.conversation_prefs enable row level security;
+drop policy if exists p_cprefs_own on public.conversation_prefs;
+create policy p_cprefs_own on public.conversation_prefs for all
+  using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+-- 2. 撤回(⑦ 决策5:仅 AM/AD 撤自己的,无时限):正文与附件清空,留占位标
+alter table public.messages add column if not exists recalled_at timestamptz;
+alter table public.messages drop constraint if exists msg_body_or_att;
+alter table public.messages add constraint msg_body_or_att check (
+  (recalled_at is not null)
+  or (char_length(body) between 1 and 4000)
+  or (attachment_path is not null and char_length(body) <= 4000)
+);
+
+-- 生产漂移防雷:平行开发时代残留过异返回类型的同名函数(42P13),先卸再建(新库无害)
+drop function if exists public.recall_message(uuid);
+create or replace function public.recall_message(p_id uuid)
+returns json language plpgsql security definer set search_path = public as $$
+declare
+  v_uid uuid := auth.uid();
+  v_role public.user_role;
+  m public.messages%rowtype;
+begin
+  select role into v_role from public.profiles where id = v_uid;
+  if v_role not in ('am', 'admin') then
+    raise exception '仅员工可撤回消息。';
+  end if;
+  select * into m from public.messages where id = p_id for update;
+  if not found then raise exception '消息不存在。'; end if;
+  if m.sender_id <> v_uid then raise exception '只能撤回自己发送的消息。'; end if;
+  if m.kind = 'system' then raise exception '系统通知不可撤回。'; end if;
+  if m.recalled_at is not null then return json_build_object('ok', true); end if;
+  update public.messages
+     set body = '', attachment_path = null, attachment_name = null,
+         attachment_type = null, attachment_size = null, recalled_at = now()
+   where id = p_id;
+  return json_build_object('ok', true);
+end $$;
+revoke execute on function public.recall_message(uuid) from public, anon;
+grant  execute on function public.recall_message(uuid) to authenticated, service_role;
+
+-- 3. 会话列表 v4:偏好三列 + 对方头像 + 末条撤回/附件标;置顶优先排序
+create or replace function public.list_conversations()
+returns json language sql stable security definer set search_path = public as $$
+  select coalesce(json_agg(row_to_json(x)), '[]'::json) from (
+    select c.id,
+      case when c.a = auth.uid() then c.b else c.a end                          as other_id,
+      op.display_name                                                          as other_name,
+      op.avatar_url                                                            as other_avatar,
+      op.role                                                                  as other_role,
+      case when op.role = 'lead'
+           then (select le.email from public.leads le where le.profile_id = op.id)
+           else op.email end                                                   as other_email,
+      c.last_message_at,
+      (select id from public.messages m where m.conversation_id = c.id
+        order by m.created_at desc limit 1)                                    as last_message_id,
+      (select body from public.messages m where m.conversation_id = c.id
+        order by m.created_at desc limit 1)                                    as last_body,
+      (select m.recalled_at is not null from public.messages m
+        where m.conversation_id = c.id
+        order by m.created_at desc limit 1)                                    as last_recalled,
+      (select m.attachment_path is not null from public.messages m
+        where m.conversation_id = c.id
+        order by m.created_at desc limit 1)                                    as last_att,
+      (select count(*) from public.messages m where m.conversation_id = c.id
+        and m.sender_id <> auth.uid()
+        and m.created_at > coalesce(r.read_at, 'epoch'::timestamptz))::int     as unread,
+      pf.pinned_at, coalesce(pf.muted, false)                                  as muted,
+      coalesce(pf.manual_unread, false)                                        as manual_unread,
+      public.line_active(c.a, c.b)                                             as active
+    from public.conversations c
+    join public.profiles op on op.id = case when c.a = auth.uid() then c.b else c.a end
+    left join public.message_reads r on r.conversation_id = c.id and r.user_id = auth.uid()
+    left join public.conversation_prefs pf
+      on pf.conversation_id = c.id and pf.user_id = auth.uid()
+    where c.a = auth.uid() or c.b = auth.uid()
+    order by (pf.pinned_at is not null) desc, pf.pinned_at desc nulls last,
+             c.last_message_at desc
+  ) x
+$$;
+
+-- 4. 全局未读 v2:静音会话不计入导航红点(行内角标照常)
+create or replace function public.unread_total()
+returns integer language sql stable security definer set search_path = public as $$
+  select coalesce(sum(cnt), 0)::int from (
+    select (select count(*) from public.messages m
+            where m.conversation_id = c.id and m.sender_id <> auth.uid()
+              and m.created_at > coalesce(r.read_at, 'epoch'::timestamptz)) as cnt
+    from public.conversations c
+    left join public.message_reads r on r.conversation_id = c.id and r.user_id = auth.uid()
+    left join public.conversation_prefs pf
+      on pf.conversation_id = c.id and pf.user_id = auth.uid()
+    where (c.a = auth.uid() or c.b = auth.uid())
+      and not coalesce(pf.muted, false)
+  ) x
+$$;
+
+-- 5. mark_read v2:入场即清「手动未读」标
+create or replace function public.mark_read(p_conversation uuid)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  insert into public.message_reads (conversation_id, user_id, read_at)
+  values (p_conversation, auth.uid(), now())
+  on conflict (conversation_id, user_id) do update set read_at = now();
+  update public.conversation_prefs
+     set manual_unread = false
+   where user_id = auth.uid() and conversation_id = p_conversation
+     and manual_unread;
+end $$;
+
+-- 6. KYC 审核收编(A1,三护栏:仅无主/仅转为 verified 这一刻/仅 AM 审核):
+--    zzz 命名令其在守卫触发器之后执行,补写归属不再过守卫
+create or replace function public.kyc_adopt()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare v_am uuid;
+begin
+  if new.kyc_status = 'verified'
+     and old.kyc_status is distinct from 'verified'
+     and new.managed_by is null then
+    v_am := public.current_am_id();
+    if v_am is not null then
+      new.managed_by := v_am;
+    end if;
+  end if;
+  return new;
+end $$;
+drop trigger if exists trg_zzz_kyc_adopt on public.profiles;
+create trigger trg_zzz_kyc_adopt before update of kyc_status on public.profiles
+  for each row execute function public.kyc_adopt();
+
+
 -- 11. 自检输出（跑完看这个结果）
---     期望：tables = 34，enums = 11，public_policies = 79，storage = 15  (m44 基线)
+--     期望：tables = 35，enums = 11，public_policies = 80，storage = 15  (m44 基线)
 --           storage_policies = 21，buckets = 5  (m47)
 -- ----------------------------------------------------------------
 
