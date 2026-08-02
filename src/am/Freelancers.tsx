@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { bjDay } from '../lib/format'
 import type { PoolRow } from '../types/database'
@@ -12,14 +12,14 @@ const COPY = {
   zh: {
     title: '我的 Freelancer', sub: '你名下的人才:负载与签到一览。三个入口:清单验收、完整档案、直接派任务。',
     empty: '名下还没有人。去', poolLink: '人才库', empty2: '认领无归属的 freelancer。',
-    board: '清单', profile: '档案', assign: '派任务', search: '按名字/联系方式搜索…', ciNone: '今日未签到', ciPending: '确认签到', ciDone: '签到已复核 ✓',
+    chat: '对话', board: '清单', profile: '档案', assign: '派任务', search: '按名字/联系方式搜索…', ciNone: '今日未签到', ciPending: '确认签到', ciDone: '签到已复核 ✓',
     active: '活跃', done: '完成', suspended: '已暂停',
     fAll: '全部', fCi: '今日签到待确认', fKycPending: 'KYC 待审核', fKycDone: 'KYC 已完成', noMatch: '没有匹配的人。',
   },
   en: {
     title: 'My freelancers', sub: 'Your roster with load and check-ins at a glance. Three doors: checklist, full profile, assign a task.',
     empty: 'Nobody yet. Claim unowned freelancers in the', poolLink: 'Pool', empty2: '.',
-    board: 'Checklist', profile: 'Profile', assign: 'Assign task', search: 'Search by name / contact…', ciNone: 'No check-in today', ciPending: 'Confirm check-in', ciDone: 'Check-in confirmed ✓',
+    chat: 'Chat', board: 'Checklist', profile: 'Profile', assign: 'Assign task', search: 'Search by name / contact…', ciNone: 'No check-in today', ciPending: 'Confirm check-in', ciDone: 'Check-in confirmed ✓',
     active: 'active', done: 'done', suspended: 'Paused',
     fAll: 'All', fCi: 'Check-ins to confirm', fKycPending: 'KYC pending', fKycDone: 'KYC verified', noMatch: 'No one matches.',
   },
@@ -44,6 +44,7 @@ function useFocusFlash() {
 }
 
 export default function AmFreelancers() {
+  const navigate = useNavigate()
   useFocusFlash()
   const { lang } = useLang()
   const t = COPY[lang]
@@ -65,6 +66,14 @@ export default function AmFreelancers() {
     }
     setCi(map)
   }, [bjToday])
+
+
+  // v74.1:名下直达对话(深链 /am/messages?with=)
+  async function openChat(id: string) {
+    const { error: e } = await supabase.rpc('open_conversation', { p_other: id })
+    if (e) { setError(e.message); return }
+    navigate(`/am/messages?with=${id}`)
+  }
 
   async function confirmCi(id: string) {
     setCiBusy(id)
@@ -157,6 +166,7 @@ export default function AmFreelancers() {
               )}
               <Link to={`/am/f/${r.id}`}><Button className="px-3 py-1.5 text-xs">{t.board}</Button></Link>
               <Link to={`/am/pool/${r.id}`}><Button variant="ghost" className="px-3 py-1.5 text-xs">{t.profile}</Button></Link>
+              <Button variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => void openChat(r.id)}>{t.chat}</Button>
               <Link to={`/am/tasks/new?fl=${r.id}`}><Button variant="ghost" className="px-3 py-1.5 text-xs">{t.assign}</Button></Link>
             </div>
           </div>
