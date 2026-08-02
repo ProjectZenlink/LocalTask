@@ -463,7 +463,10 @@ export default function ChatCenter({ lang, myRole, variant = 'page', onClose, in
   const thread = (
     <div className="relative flex h-full min-w-0 flex-col bg-white/40">
       <div className="flex items-center gap-3 border-b border-hair bg-surface px-4 py-2.5">
-        <button className={`font-mono text-[10px] uppercase tracking-wider text-faint transition hover:text-ink ${dock ? '' : 'md:hidden'}`} onClick={() => setSel(null)}>{t.back}</button>
+        <button onClick={() => setSel(null)} title={t.back}
+          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-hair text-lg leading-none text-muted transition hover:border-petrol/40 hover:text-petrol ${dock ? '' : 'md:hidden'}`}>
+          {t.back}
+        </button>
         {cur && (
           <span className="flex min-w-0 items-center gap-2.5">
             <span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full border border-hair bg-white font-display text-xs font-medium text-muted">
