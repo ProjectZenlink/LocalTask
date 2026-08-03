@@ -5046,6 +5046,26 @@ revoke execute on function public.claim_lead(uuid) from public, anon;
 grant  execute on function public.claim_lead(uuid) to authenticated, service_role;
 
 
+
+
+-- ================================================================
+-- m53 合并块:清单自定义账号(custom_name · Other 窄口删除权)
+-- ================================================================
+-- 自定义账号(v80):Other 类型记录的命名位(该类型此前零 UI 入口,无历史包袱)
+alter table public.account_records add column if not exists custom_name text;
+alter table public.account_records drop constraint if exists record_custom_name_chk;
+alter table public.account_records add constraint record_custom_name_chk
+  check (custom_name is null or char_length(btrim(custom_name)) between 1 and 40);
+
+-- 窄口删除权:仅 Other(自定义)记录,名下范围;标准八平台仍走 admin 治理
+drop policy if exists p_rec_am_del_custom on public.account_records;
+create policy p_rec_am_del_custom on public.account_records for delete
+  using (task_type = 'Other'
+         and exists (select 1 from public.profiles f
+                     where f.id = freelancer_id
+                       and f.managed_by = public.current_am_id()));
+
+
 -- 11. 自检输出（跑完看这个结果）
 --     期望：tables = 35，enums = 11，public_policies = 80，storage = 15  (m44 基线)
 --           storage_policies = 21，buckets = 5  (m47)
