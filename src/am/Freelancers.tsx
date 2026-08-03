@@ -14,14 +14,14 @@ const COPY = {
     empty: '名下还没有人。去', poolLink: '人才库', empty2: '认领无归属的 freelancer。',
     chat: '对话', board: '清单', profile: '档案', assign: '派任务', search: '按名字/联系方式搜索…', ciNone: '今日未签到', ciPending: '确认签到', ciDone: '签到已复核 ✓',
     active: '活跃', done: '完成', suspended: '已暂停',
-    fAll: '全部', fCi: '今日签到待确认', fKycPending: 'KYC 待审核', fKycDone: 'KYC 已完成', noMatch: '没有匹配的人。',
+    fAll: '全部', fCi: '今日签到待确认', fKycPending: 'KYC 待审核', fKycDone: 'KYC 已完成', reviewGo: '去审核', noMatch: '没有匹配的人。',
   },
   en: {
     title: 'My freelancers', sub: 'Your roster with load and check-ins at a glance. Three doors: checklist, full profile, assign a task.',
     empty: 'Nobody yet. Claim unowned freelancers in the', poolLink: 'Pool', empty2: '.',
     chat: 'Chat', board: 'Checklist', profile: 'Profile', assign: 'Assign task', search: 'Search by name / contact…', ciNone: 'No check-in today', ciPending: 'Confirm check-in', ciDone: 'Check-in confirmed ✓',
     active: 'active', done: 'done', suspended: 'Paused',
-    fAll: 'All', fCi: 'Check-ins to confirm', fKycPending: 'KYC pending', fKycDone: 'KYC verified', noMatch: 'No one matches.',
+    fAll: 'All', fCi: 'Check-ins to confirm', fKycPending: 'KYC pending', fKycDone: 'KYC verified', reviewGo: 'Review', noMatch: 'No one matches.',
   },
 }
 
@@ -136,6 +136,10 @@ export default function AmFreelancers() {
             {label}{n !== null ? ` · ${n}` : ''}
           </button>
         ))}
+        <Link to="/am/kyc"
+          className="ml-auto inline-flex items-center gap-1.5 self-center rounded-full border border-petrol/40 px-3 py-1 font-mono text-[11px] uppercase tracking-wider text-petrol transition hover:bg-petrol hover:text-paper">
+          {t.reviewGo}{counts.kyc_pending > 0 && <span className="opacity-80">· {counts.kyc_pending}</span>}
+        </Link>
       </div>
       {error && <Alert tone="error">{error}</Alert>}
 
