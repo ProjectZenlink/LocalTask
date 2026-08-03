@@ -46,14 +46,12 @@ const COPY = {
 
 export default function LeadChat({
   conversationId, meId, otherId, lang, readOnly,
-  onConvLost,
 }: {
   conversationId: string
   meId: string
   otherId: string | null
   lang: 'zh' | 'en'
   readOnly: boolean
-  onConvLost?: () => Promise<string | null>
 }) {
   const t = COPY[lang]
   const [msgs, setMsgs] = useState<Msg[]>([])
@@ -164,24 +162,8 @@ export default function LeadChat({
     })
     setBusy(false)
     if (error) {
-      if (error.message.toLowerCase().includes('read-only')) { setRoHit(true); return }
-      // v73 ②:认领/换归属会搬线并删除旧会话 —— 自动重解析新线并原样重发,用户无感
-      if (error.message.includes('Conversation not found') && onConvLost) {
-        const nid = await onConvLost()
-        if (nid && nid !== conversationId) {
-          const retry = await supabase.rpc('send_message', {
-            p_conversation: nid, p_body: draft.trim(),
-            p_att_path: att?.path ?? null, p_att_name: att?.name ?? null,
-            p_att_type: att?.type ?? null, p_att_size: att?.size ?? null,
-          })
-          if (!retry.error && (retry.data as { ok?: boolean } | null)?.ok) {
-            setDraft(''); setPending(null)
-            if (fileRef.current) fileRef.current.value = ''
-            return
-          }
-        }
-      }
-      setNote(error.message)
+      if (error.message.toLowerCase().includes('read-only')) setRoHit(true)
+      else setNote(error.message)
       return
     }
     const r = data as { ok: boolean }

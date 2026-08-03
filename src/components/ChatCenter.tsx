@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowUp, Plus, Feather, MoreHorizontal, Pin, BellOff, MailPlus, Undo2, Languages } from 'lucide-react'
+import { ArrowUp, Plus, Feather, MoreHorizontal, Pin, BellOff, MailPlus, Undo2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
-import { needsTranslation, translateBatch, prewarmTranslate, translateDraft } from '../lib/translate'
+import { needsTranslation, translateBatch, prewarmTranslate } from '../lib/translate'
 import { PageHeading, Card, Button, Alert } from './ui'
 import { parseSystemBody, sysText } from '../lib/leads'
 import EmojiPicker from './EmojiPicker'
@@ -60,8 +60,7 @@ const COPY = {
     orig: '看原文', trBack: '看译文', read: '已读', profileBtn: '客户资料',
     pin: '置顶', unpin: '取消置顶', markUnread: '标记未读', mute: '静音', unmute: '取消静音',
     recall: '撤回', recallAsk: '撤回这条消息?对方将看到"已撤回"占位。',
-    recalled: '已撤回一条消息', attPrev: '📎 附件',
-    quickTr: '快译', trPh: '开始输入,自动生成英文预览…', trRedo: '重译', trSendEn: '以英文发送', attach: '发送图片/文件', attErrType: '仅支持 图片(jpg/png/webp/gif) 与 PDF。', attErrSize: '文件不能超过 10MB。', attErrUp: '上传失败,请重试。', autoTag: '自动回复',
+    recalled: '已撤回一条消息', attPrev: '📎 附件', attach: '发送图片/文件', attErrType: '仅支持 图片(jpg/png/webp/gif) 与 PDF。', attErrSize: '文件不能超过 10MB。', attErrUp: '上传失败,请重试。', autoTag: '自动回复',
   },
   en: {
     title: 'Messages', sub: 'On-platform conversations with your team.', pick: 'New', send: 'Send',
@@ -75,14 +74,12 @@ const COPY = {
     orig: 'Original', trBack: 'Translation', read: 'Read', profileBtn: 'Customer info',
     pin: 'Pin', unpin: 'Unpin', markUnread: 'Mark unread', mute: 'Mute', unmute: 'Unmute',
     recall: 'Recall', recallAsk: 'Recall this message? The other side will see a placeholder.',
-    recalled: 'Message recalled', attPrev: '📎 Attachment',
-    quickTr: 'Quick translate', trPh: 'Type to preview the English…', trRedo: 'Retranslate', trSendEn: 'Send in English', attach: 'Send image / file', attErrType: 'Images (jpg/png/webp/gif) and PDF only.', attErrSize: 'Max file size is 10MB.', attErrUp: 'Upload failed — please retry.', autoTag: 'Auto-reply',
+    recalled: 'Message recalled', attPrev: '📎 Attachment', attach: 'Send image / file', attErrType: 'Images (jpg/png/webp/gif) and PDF only.', attErrSize: 'Max file size is 10MB.', attErrUp: 'Upload failed — please retry.', autoTag: 'Auto-reply',
   },
 }
 
-export default function ChatCenter({ lang, myRole, variant = 'page', onClose, initialWith = null }: {
+export default function ChatCenter({ lang, myRole, variant = 'page' }: {
   lang: 'zh' | 'en'; myRole: 'user' | 'am' | 'admin'; variant?: 'page' | 'dock'
-  onClose?: () => void; initialWith?: string | null
 }) {
   const dock = variant === 'dock'
   const t = COPY[lang]
@@ -99,17 +96,11 @@ export default function ChatCenter({ lang, myRole, variant = 'page', onClose, in
   const [targets, setTargets] = useState<Target[]>([])
   const [tq, setTq] = useState('')
   const [trs, setTrs] = useState<Record<string, string>>({})
+  const [showOrig, setShowOrig] = useState<Record<string, boolean>>({})
   const requestedRef = useRef<Set<string>>(new Set())
-  const ownReqRef = useRef<Set<string>>(new Set())
-  const [trsEn, setTrsEn] = useState<Record<string, string>>({})
   const [, setHoldTick] = useState(0)
   const [drawer, setDrawer] = useState(false)
   const [rowMenu, setRowMenu] = useState<{ id: string; x: number; y: number } | null>(null)
-  const [trOpen, setTrOpen] = useState(false)
-  const [trBusy, setTrBusy] = useState(false)
-  const [trText, setTrText] = useState('')
-  const trFormRef = useRef<0 | 1 | 2>(0)
-  const [msgMenu, setMsgMenu] = useState<{ id: string; x: number; y: number } | null>(null)
   const [pending, setPending] = useState<File | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const [otherReadAt, setOtherReadAt] = useState<string | null>(null)
@@ -170,7 +161,7 @@ export default function ChatCenter({ lang, myRole, variant = 'page', onClose, in
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [msgs])
 
   // v61 自动翻译:界面语言切换时清空重来(缓存表里两种语言都有,重取零额度)
-  useEffect(() => { requestedRef.current = new Set(); setTrs({}) }, [lang])
+  useEffect(() => { requestedRef.current = new Set(); setTrs({}); setShowOrig({}) }, [lang])
   useEffect(() => { prewarmTranslate() }, [])
 
   // v61 自动翻译:对方消息与界面语言不同 → 批量取译文(函数侧缓存,每条只真翻一次)
@@ -186,42 +177,6 @@ export default function ChatCenter({ lang, myRole, variant = 'page', onClose, in
       setHoldTick(v => v + 1)
     })
   }, [msgs, lang, user])
-
-  // v79 ③:快译条 —— 草稿 500ms 防抖出英文预览
-  useEffect(() => {
-    if (!trOpen || myRole === 'user') return
-    const d = draft.trim()
-    if (!d || !needsTranslation(d, 'en')) { setTrText(''); setTrBusy(false); return }
-    setTrBusy(true)
-    const h = window.setTimeout(() => {
-      const f = (['default', 'more', 'less'] as const)[trFormRef.current]
-      void translateDraft(d, 'en', f).then(r => { setTrText(r ?? ''); setTrBusy(false) })
-    }, 500)
-    return () => window.clearTimeout(h)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft, trOpen])
-
-  async function retranslate() {
-    const d = draft.trim()
-    if (!d || trBusy) return
-    trFormRef.current = ((trFormRef.current + 1) % 3) as 0 | 1 | 2
-    setTrBusy(true)
-    const f = (['default', 'more', 'less'] as const)[trFormRef.current]
-    const r = await translateDraft(d, 'en', f)
-    setTrText(r ?? ''); setTrBusy(false)
-  }
-
-  // v78 ②:员工自己发出的消息附英文副行(与 FR 所见一致,便于核对)
-  useEffect(() => {
-    if (!user || myRole === 'user') return
-    const own = msgs.filter(m => m.sender_id === user.id && m.kind !== 'system'
-      && !m.recalled_at && needsTranslation(m.body, 'en') && !ownReqRef.current.has(m.id))
-    if (own.length === 0) return
-    for (const m of own) ownReqRef.current.add(m.id)
-    void translateBatch(own.map(m => m.id), 'en').then(got => {
-      if (Object.keys(got).length > 0) setTrsEn(prev => ({ ...prev, ...got }))
-    })
-  }, [msgs, user, myRole])
 
   /** v70 C2:按消息年龄判定 —— 需翻译且落地未满 2.5s 且译文未到 → 占位点;
    *  首帧即命中(不依赖登记时序),从根上消灭"闪原文"。 */
@@ -305,9 +260,9 @@ export default function ChatCenter({ lang, myRole, variant = 'page', onClose, in
     await loadConvs()
   }
 
-  // v73.1 ⑦:撤回(仅员工;右键/长按浮层直达,无系统弹窗)
+  // v71 ⑦:撤回(仅员工;库侧无时限守卫)
   async function recallMsg(m: Msg) {
-    setMsgMenu(null)
+    if (!window.confirm(t.recallAsk)) return
     const { error: e } = await supabase.rpc('recall_message', { p_id: m.id })
     if (e) { setError(e.message); return }
     setMsgs(prev => prev.map(x => x.id === m.id
@@ -320,13 +275,6 @@ export default function ChatCenter({ lang, myRole, variant = 'page', onClose, in
   // v69 ①:深链 /messages?with=<profileId> —— 线索页「对话」一步落座(仅整页形态)
   const startWithRef = useRef(startWith)
   startWithRef.current = startWith
-  // v75 ③:小窗按需直达某人(lt-open-dock 事件携带)
-  useEffect(() => {
-    if (!initialWith) return
-    void startWithRef.current(initialWith)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialWith])
-
   useEffect(() => {
     if (variant !== 'page') return
     const w = new URLSearchParams(window.location.search).get('with')
@@ -344,12 +292,9 @@ export default function ChatCenter({ lang, myRole, variant = 'page', onClose, in
     setPending(f)
   }
 
-  async function send() { return sendBody(draft) }
-
-  async function sendBody(rawText: string) {
-    const text = rawText.trim()
+  async function send() {
     if (!sel || busy) return
-    if (!text && !pending) return
+    if (!draft.trim() && !pending) return
     setBusy(true); setError(null)
     let att: { path: string; name: string; type: 'image' | 'file'; size: number } | null = null
     if (pending && user) {
@@ -360,7 +305,7 @@ export default function ChatCenter({ lang, myRole, variant = 'page', onClose, in
       }
     }
     const { data, error: e } = await supabase.rpc('send_message', {
-      p_conversation: sel, p_body: text,
+      p_conversation: sel, p_body: draft.trim(),
       p_att_path: att?.path ?? null, p_att_name: att?.name ?? null,
       p_att_type: att?.type ?? null, p_att_size: att?.size ?? null,
     })
@@ -368,7 +313,7 @@ export default function ChatCenter({ lang, myRole, variant = 'page', onClose, in
     if (e) { setError(e.message); return }
     const r = data as { ok: boolean; id?: string; error?: string }
     if (!r.ok) { setError(t.blocked); return }
-    const sentBody = text
+    const sentBody = draft.trim()
     const newId = (data as { id?: string } | null)?.id
     const opp: 'zh' | 'en' = lang === 'zh' ? 'en' : 'zh'
     if (newId && sentBody && needsTranslation(sentBody, opp)) {
@@ -409,20 +354,12 @@ export default function ChatCenter({ lang, myRole, variant = 'page', onClose, in
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b border-hair px-4 py-3">
         <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-faint">{t.title}</span>
-        <span className="flex items-center gap-1.5">
-          {(myRole !== 'user' || convs.length > 0) && (
-            <button onClick={() => void openPicker()} title={myRole === 'user' ? t.contactAm : t.pick}
-              className="flex h-6 w-6 items-center justify-center rounded-full border border-hair text-faint transition hover:border-petrol/40 hover:text-petrol">
-              <Plus size={13} strokeWidth={2} />
-            </button>
-          )}
-          {onClose && (
-            <button onClick={onClose} title="×"
-              className="flex h-6 w-6 items-center justify-center rounded-full border border-hair text-faint transition hover:text-ink">
-              <X size={13} />
-            </button>
-          )}
-        </span>
+        {(myRole !== 'user' || convs.length > 0) && (
+          <button onClick={() => void openPicker()} title={myRole === 'user' ? t.contactAm : t.pick}
+            className="flex h-6 w-6 items-center justify-center rounded-full border border-hair text-faint transition hover:border-petrol/40 hover:text-petrol">
+            <Plus size={13} strokeWidth={2} />
+          </button>
+        )}
       </div>
       {convs.length > 0 && (
         <div className="border-b border-hair px-3 py-2">
@@ -509,10 +446,7 @@ export default function ChatCenter({ lang, myRole, variant = 'page', onClose, in
   const thread = (
     <div className="relative flex h-full min-w-0 flex-col bg-white/40">
       <div className="flex items-center gap-3 border-b border-hair bg-surface px-4 py-2.5">
-        <button onClick={() => setSel(null)} title={t.back}
-          className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-hair text-base leading-none text-muted transition hover:border-petrol/40 hover:text-petrol ${dock ? '' : 'md:hidden'}`}>
-          {t.back}
-        </button>
+        <button className={`font-mono text-[10px] uppercase tracking-wider text-faint transition hover:text-ink ${dock ? '' : 'md:hidden'}`} onClick={() => setSel(null)}>{t.back}</button>
         {cur && (
           <span className="flex min-w-0 items-center gap-2.5">
             <span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full border border-hair bg-white font-display text-xs font-medium text-muted">
@@ -535,7 +469,6 @@ export default function ChatCenter({ lang, myRole, variant = 'page', onClose, in
           </button>
         )}
       </div>
-        <div className="relative flex min-h-0 flex-1 flex-col">
       {myRole === 'user' && (
         <p className="flex items-center gap-2 border-b border-hair px-4 py-1.5 font-mono text-[10px] tracking-wide text-pending-text">
           <span className="h-1 w-1 shrink-0 rounded-full bg-pending-text" />{t.civil}
@@ -545,6 +478,7 @@ export default function ChatCenter({ lang, myRole, variant = 'page', onClose, in
         {msgs.map((m, idx) => {
           const mine = m.sender_id === user?.id
           const tr = mine ? undefined : trs[m.id]
+          const showO = myRole === 'user' ? false : !!showOrig[m.id]
           const prev = msgs[idx - 1]
           const next = msgs[idx + 1]
           const newDay = !prev || new Date(prev.created_at).toDateString() !== new Date(m.created_at).toDateString()
@@ -577,18 +511,7 @@ export default function ChatCenter({ lang, myRole, variant = 'page', onClose, in
           return (
             <div key={m.id}>
               {daySep}
-              <div className={`flex items-center ${mine ? 'justify-end' : 'justify-start'} ${gapPrev && !newDay ? 'mt-3' : 'mt-[3px]'}`}
-                {...(mine && myRole !== 'user' && !m.recalled_at ? {
-                  onContextMenu: (e: React.MouseEvent) => { e.preventDefault(); setMsgMenu({ id: m.id, x: e.clientX, y: e.clientY }) },
-                  onTouchStart: (e: React.TouchEvent) => {
-                    const t0 = e.touches[0]
-                    const tgt = e.target as HTMLElement
-                    const timer = window.setTimeout(() => setMsgMenu({ id: m.id, x: t0.clientX, y: t0.clientY }), 500)
-                    const clear = () => window.clearTimeout(timer)
-                    tgt.addEventListener('touchend', clear, { once: true })
-                    tgt.addEventListener('touchmove', clear, { once: true })
-                  },
-                } : {})}>
+              <div className={`flex ${mine ? 'justify-end' : 'justify-start'} ${gapPrev && !newDay ? 'mt-3' : 'mt-[3px]'}`}>
                 <div className={`max-w-[72%] px-3.5 py-2 text-sm leading-relaxed ${
                   mine
                     ? `bg-petrol text-paper ${groupEnd ? 'rounded-2xl rounded-br-md' : 'rounded-2xl'}`
@@ -612,15 +535,18 @@ export default function ChatCenter({ lang, myRole, variant = 'page', onClose, in
                       <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current opacity-60 [animation-delay:300ms] motion-reduce:animate-none" />
                     </span>
                   ) : (
-                    <p className="whitespace-pre-wrap break-words">{tr ?? m.body}</p>
+                    <p className="whitespace-pre-wrap break-words">{tr && !showO ? tr : m.body}</p>
                   ))}
-                  {mine && myRole !== 'user' && !m.recalled_at && trsEn[m.id] && trsEn[m.id] !== m.body && (
-                    <p className="mt-1 whitespace-pre-wrap break-words border-t border-paper/25 pt-1 text-[11.5px] leading-snug opacity-85">
-                      {trsEn[m.id]}
-                    </p>
-                  )}
                   {m.kind === 'auto' && (
                     <p className={`mt-1 font-mono text-[9px] uppercase tracking-[0.14em] ${mine ? 'text-paper/70' : 'text-faint'}`}>· {t.autoTag}</p>
+                  )}
+                  {myRole !== 'user' && tr && (
+                    <button
+                      onClick={() => setShowOrig(p => ({ ...p, [m.id]: !p[m.id] }))}
+                      className="mt-1 block font-mono text-[9px] uppercase tracking-[0.14em] text-faint transition hover:text-petrol"
+                    >
+                      {showO ? t.trBack : t.orig}
+                    </button>
                   )}
                 </div>
               </div>
@@ -628,7 +554,12 @@ export default function ChatCenter({ lang, myRole, variant = 'page', onClose, in
                 <p className={`mt-1 font-mono text-[9.5px] text-faint ${mine ? 'text-right' : 'text-left'}`}>
                   {timeShort(m.created_at)}
                   {mine && m.id === lastReadMineId && <span className="text-petrol"> · {t.read}</span>}
-
+                  {mine && myRole !== 'user' && !m.recalled_at && (
+                    <button onClick={() => void recallMsg(m)}
+                      className="ml-1.5 hidden font-mono text-[9px] uppercase tracking-wider text-faint transition hover:text-danger-text group-hover:inline">
+                      {t.recall}
+                    </button>
+                  )}
                 </p>
               )}
             </div>
@@ -665,14 +596,6 @@ export default function ChatCenter({ lang, myRole, variant = 'page', onClose, in
             {myRole !== 'user' && user && (
               <QuickReplies meId={user.id} lang={lang} onPick={b => setDraft(d => (d ? d + '\n' + b : b))} />
             )}
-            {myRole !== 'user' && (
-              <button type="button" title={t.quickTr} onClick={() => setTrOpen(v => !v)}
-                className={`flex h-9 w-9 items-center justify-center rounded-full border transition ${
-                  trOpen ? 'border-petrol/50 text-petrol' : 'border-hair text-faint hover:border-petrol/40 hover:text-petrol'
-                }`}>
-                <Languages size={16} strokeWidth={1.8} />
-              </button>
-            )}
           </div>
           <textarea value={draft} onChange={e => setDraft(e.target.value)} rows={1} placeholder={t.placeholder}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send() } }}
@@ -682,26 +605,6 @@ export default function ChatCenter({ lang, myRole, variant = 'page', onClose, in
             <ArrowUp size={17} strokeWidth={2.25} />
           </button>
         </div>
-        {trOpen && myRole !== 'user' && (
-          <div className="border-t border-hair bg-paper/60 px-3.5 py-2.5">
-            <div className="flex items-start gap-2">
-              <p className={`min-h-[1.5rem] flex-1 whitespace-pre-wrap break-words text-sm leading-relaxed ${
-                trText ? 'text-ink' : 'text-faint'
-              }`}>
-                {trBusy ? '…' : (trText || t.trPh)}
-              </p>
-              <button onClick={() => void retranslate()} disabled={trBusy || !draft.trim()}
-                className="shrink-0 rounded-full border border-hair px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider text-muted transition hover:text-ink disabled:opacity-40">
-                ↻ {t.trRedo}
-              </button>
-              <button onClick={() => { const b = trText; setTrText(''); void sendBody(b) }}
-                disabled={trBusy || !trText}
-                className="shrink-0 rounded-full bg-petrol px-3 py-1 font-mono text-[10px] uppercase tracking-wider text-paper transition hover:bg-petrol-hover disabled:opacity-40">
-                {t.trSendEn}
-              </button>
-            </div>
-          </div>
-        )}
         </>
       )}
       {drawer && cur && user && (cur.other_role === 'user' || cur.other_role === 'lead') && (
@@ -712,27 +615,9 @@ export default function ChatCenter({ lang, myRole, variant = 'page', onClose, in
           lang={lang}
           isAdmin={myRole === 'admin'}
           meId={user.id}
-          down={dock}
           onClose={() => setDrawer(false)}
         />
       )}
-      </div>
-    </div>
-  )
-
-  // v73.1 ⑦:消息浮动菜单(撤回)
-  const menuMsg = msgMenu ? msgs.find(x => x.id === msgMenu.id) ?? null : null
-  const msgMenuEl = msgMenu && menuMsg && (
-    <div className="fixed inset-0 z-40" onClick={() => setMsgMenu(null)}
-      onContextMenu={e => { e.preventDefault(); setMsgMenu(null) }}>
-      <div className="absolute w-36 rounded-xl border border-hair bg-white py-1 shadow-[0_16px_48px_rgba(26,32,30,0.18)]"
-        style={{ left: Math.min(msgMenu.x, window.innerWidth - 156), top: Math.min(msgMenu.y, window.innerHeight - 70) }}
-        onClick={e => e.stopPropagation()}>
-        <button onClick={() => void recallMsg(menuMsg)}
-          className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-sm text-danger-text transition hover:bg-paper">
-          <Undo2 size={14} /> {t.recall}
-        </button>
-      </div>
     </div>
   )
 
@@ -804,7 +689,6 @@ export default function ChatCenter({ lang, myRole, variant = 'page', onClose, in
         </div>
         {picker && pickerModal}
         {rowMenuEl}
-        {msgMenuEl}
       </div>
     )
   }
@@ -829,7 +713,6 @@ export default function ChatCenter({ lang, myRole, variant = 'page', onClose, in
 
       {picker && pickerModal}
       {rowMenuEl}
-      {msgMenuEl}
     </div>
   )
 }

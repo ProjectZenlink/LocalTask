@@ -268,7 +268,6 @@ export interface AccountRecord {
   id: string
   freelancer_id: string
   task_type: PlatformType
-  custom_name: string | null
   account_login: string | null
   account_password: string | null
   twofa: string | null

@@ -1,5 +1,4 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react'
-import { getDockOpen, subscribeDock } from '../lib/dockState'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { bjDay } from '../lib/format'
@@ -27,6 +26,7 @@ const NAV_GROUPS = [
     { to: '/am/leads', zh: '线索', en: 'Leads', badge: 'leads' },
   ],
   [
+    { to: '/am/kyc', zh: 'KYC 审核', en: 'KYC', badge: 'kyc' },
     { to: '/am/payouts', zh: '提现', en: 'Payouts', badge: 'payout' },
     { to: '/am/accounts', zh: '资料库', en: 'Library' },
   ],
@@ -41,14 +41,12 @@ function Shell() {
   const { lang, toggle } = useLang()
   const { user } = useAuth()
   const navigate = useNavigate()
-  // v77 并排工作区:统一状态源
-  const [dockOpen, setDockOpen] = useState(getDockOpen)
-  useEffect(() => subscribeDock(setDockOpen), [])
   const [am, setAm] = useState<AccountManager | null>(null)
   const [askOut, setAskOut] = useState(false)
   const unread = useUnread(!!user)
   const [payoutCount, setPayoutCount] = useState(0)
   const [ciCount, setCiCount] = useState(0)
+  const [kycCount, setKycCount] = useState(0)
   const [leadsCount, setLeadsCount] = useState(0)
 
   const refresh = useCallback(async () => {
@@ -79,6 +77,9 @@ function Shell() {
       supabase.from('checkins').select('user_id, freelancer:profiles!user_id!inner(id)', { count: 'exact', head: true })
         .eq('day', bjDay()).is('confirmed_at', null).eq('freelancer.managed_by', am.id)
         .then(({ count }) => setCiCount(count ?? 0))
+      supabase.from('profiles').select('id', { count: 'exact', head: true })
+        .eq('kyc_status', 'pending').eq('role', 'user').eq('managed_by', am.id)
+        .then(({ count }) => setKycCount(count ?? 0))
       // 线索徽标(v62)= 我的未回新线索 + 池中可认领(惰性判定,与库侧 3 分钟常量同源)
       supabase.from('leads').select('id, status, first_reply_at, assigned_am, assigned_at')
         .eq('status', 'new').is('first_reply_at', null)
@@ -105,7 +106,7 @@ function Shell() {
         <Masthead
           home="/am"
           badge="AM"
-          groups={NAV_GROUPS.map(g => g.map(n => ({ to: n.to, label: lang === 'zh' ? n.zh : n.en, count: 'badge' in n ? (n.badge === 'payout' ? payoutCount : n.badge === 'ci' ? ciCount : n.badge === 'leads' ? leadsCount : unread) : undefined })))}
+          groups={NAV_GROUPS.map(g => g.map(n => ({ to: n.to, label: lang === 'zh' ? n.zh : n.en, count: 'badge' in n ? (n.badge === 'payout' ? payoutCount : n.badge === 'ci' ? ciCount : n.badge === 'kyc' ? kycCount : n.badge === 'leads' ? leadsCount : unread) : undefined })))}
           right={
             <>
               <button onClick={toggle} className="font-mono text-[11px] uppercase tracking-wider text-faint transition hover:text-ink">
@@ -119,11 +120,9 @@ function Shell() {
             </>
           }
         />
-        <div className={`transition-[padding] duration-300 ${dockOpen ? 'lg:pr-[400px]' : ''}`}>
         <main className="mx-auto max-w-6xl px-5 py-8">
           <Outlet />
         </main>
-        </div>
         {am && <AmTodayDock amId={am.id} />}
         <MessagesDock myRole="am" />
         <ConfirmDialog

@@ -158,7 +158,7 @@ export default function AdminAccounts() {
                 const n = names.get(r.freelancer_id)
                 return (
                   <tr key={r.id} className="border-b border-hair last:border-b-0 hover:bg-paper">
-                    <Td><span className="rounded-full border border-hair bg-paper px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-muted">{r.task_type === 'Other' && r.custom_name ? r.custom_name : typeLabel(r.task_type, lang)}</span></Td>
+                    <Td><span className="rounded-full border border-hair bg-paper px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-muted">{typeLabel(r.task_type, lang)}</span></Td>
                     <Td>{(() => { const m = REC_STATUS[r.status ?? 'active']; return <span className={`font-mono text-[11px] uppercase tracking-wider ${m.s === 'verified' ? 'text-verified-text' : m.s === 'pending' ? 'text-pending-text' : 'text-danger-text'}`}>{lang === 'zh' ? m.zh : m.en}</span> })()}</Td>
                     <Td>
                       <Link to={`${base}/${r.freelancer_id}`} className="text-petrol underline underline-offset-2">

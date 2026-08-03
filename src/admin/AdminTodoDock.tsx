@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react'
-import { getDockOpen, subscribeDock } from '../lib/dockState'
 import { Link, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
@@ -23,8 +22,6 @@ const COPY = {
 }
 
 export default function AdminTodoDock() {
-  const [dockOpen, setDockOpen] = useState(getDockOpen)
-  useEffect(() => subscribeDock(setDockOpen), [])
   const { lang } = useLang()
   const t = COPY[lang]
   const { user } = useAuth()
@@ -87,7 +84,7 @@ export default function AdminTodoDock() {
   if (folded) {
     return (
       <button onClick={toggle}
-        className={`fixed bottom-5  z-30 flex items-center gap-2 rounded-full border border-hair bg-surface px-3.5 py-2 font-mono text-[11px] uppercase tracking-wider text-muted shadow-[0_8px_28px_rgba(26,32,30,0.16)] transition hover:text-ink transition-[right] duration-300 ${dockOpen ? 'right-4 lg:right-[416px]' : 'right-5'}`}>
+        className="fixed bottom-5 right-5 z-30 flex items-center gap-2 rounded-full border border-hair bg-surface px-3.5 py-2 font-mono text-[11px] uppercase tracking-wider text-muted shadow-[0_8px_28px_rgba(26,32,30,0.16)] transition hover:text-ink">
         {t.pill}
         {rows.length > 0 && (
           <span className="inline-flex min-w-[1.05rem] items-center justify-center rounded-full bg-petrol px-1 font-mono text-[10px] leading-4 text-paper">{rows.length}</span>
@@ -97,7 +94,7 @@ export default function AdminTodoDock() {
   }
 
   return (
-    <div className={`fixed bottom-5 z-30 w-72 rounded-2xl border border-hair bg-surface p-4 shadow-[0_16px_48px_rgba(26,32,30,0.18)] transition-[right] duration-300 ${dockOpen ? 'right-4 lg:right-[416px]' : 'right-5'}`}>
+    <div className="fixed bottom-5 right-5 z-30 w-72 rounded-2xl border border-hair bg-surface p-4 shadow-[0_16px_48px_rgba(26,32,30,0.18)]">
       <button onClick={toggle} className="mb-3 flex w-full items-center justify-between font-mono text-[11px] uppercase tracking-wider text-faint transition hover:text-ink">
         {t.title}<span>×</span>
       </button>

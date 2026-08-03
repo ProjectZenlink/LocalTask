@@ -14,9 +14,9 @@ import type { Profile, Lead, CrmNote } from '../types/database'
 const COPY = {
   zh: {
     fl: 'Freelancer 档案', lead: '访客名片', close: '关闭',
-    basic: '基本', name: '法定名', dob: '出生日期', email: '注册邮箱', workEmail: '分配邮箱', weSet: '填写', weSave: '保存', weCancel: '取消',
+    basic: '基本', name: '法定名', dob: '出生日期', email: '注册邮箱',
     contact: '联系', addr: '地址', status: '状态', payout: '收款',
-    kyc: '基础 KYC', ekyc: 'Enhanced',
+    kyc: '基础 KYC', ekyc: 'Enhanced', open: '接单开关', on: '开', off: '关',
     suspended: '已暂停', banned: '已封禁', tasksT: '任务', active: '进行中', done: '已完成',
     ssn: 'SSN', show: '显示', hide: '隐藏', ssnNone: '未留存',
     wa: 'WhatsApp', tg: 'Telegram', copied: '已复制', refLink: '注册链接', copy: '复制',
@@ -26,9 +26,9 @@ const COPY = {
   },
   en: {
     fl: 'Freelancer profile', lead: 'Guest card', close: 'Close',
-    basic: 'Basics', name: 'Legal name', dob: 'Date of birth', email: 'Email', workEmail: 'Assigned email', weSet: 'Set', weSave: 'Save', weCancel: 'Cancel',
+    basic: 'Basics', name: 'Legal name', dob: 'Date of birth', email: 'Email',
     contact: 'Contact', addr: 'Address', status: 'Status', payout: 'Payout',
-    kyc: 'Base KYC', ekyc: 'Enhanced',
+    kyc: 'Base KYC', ekyc: 'Enhanced', open: 'Open to work', on: 'On', off: 'Off',
     suspended: 'Suspended', banned: 'Banned', tasksT: 'Tasks', active: 'Active', done: 'Completed',
     ssn: 'SSN', show: 'Show', hide: 'Hide', ssnNone: 'Not on file',
     wa: 'WhatsApp', tg: 'Telegram', copied: 'Copied', refLink: 'Signup link', copy: 'Copy',
@@ -41,7 +41,7 @@ const COPY = {
 type NoteRow = CrmNote & { owner: { display_name: string | null } | null }
 
 export default function ChatDrawer({
-  otherId, otherRole, otherName, lang, isAdmin, meId, onClose, down = false
+  otherId, otherRole, otherName, lang, isAdmin, meId, onClose,
 }: {
   otherId: string
   otherRole: 'user' | 'lead'
@@ -50,15 +50,9 @@ export default function ChatDrawer({
   isAdmin: boolean
   meId: string
   onClose: () => void
-  down?: boolean
 }) {
-  const [inn, setInn] = useState(!down)
-  useEffect(() => { if (down) requestAnimationFrame(() => setInn(true)) }, [down])
   const t = COPY[lang]
   const [prof, setProf] = useState<Profile | null>(null)
-  const [weEdit, setWeEdit] = useState(false)
-  const [weVal, setWeVal] = useState('')
-  const [weBusy, setWeBusy] = useState(false)
   const [lead, setLead] = useState<Lead | null>(null)
   const [taskN, setTaskN] = useState<{ active: number; done: number }>({ active: 0, done: 0 })
   const [ssn, setSsn] = useState<string | null>(null)
@@ -141,22 +135,8 @@ export default function ChatDrawer({
     <StatusBadge status={s === 'verified' ? 'verified' : s === 'pending' ? 'pending' : 'unverified'} label={s} />
   )
 
-
-  async function saveWorkEmail() {
-    if (weBusy || !prof) return
-    setWeBusy(true)
-    const v = weVal.trim() || null
-    const { error: e } = await supabase.from('profiles').update({ work_email: v }).eq('id', otherId)
-    setWeBusy(false)
-    if (e) return
-    setProf({ ...prof, work_email: v })
-    setWeEdit(false)
-  }
-
   return (
-    <div className={down
-      ? `absolute inset-0 z-20 flex flex-col overflow-hidden border-t border-hair bg-surface transition-all duration-200 ${inn ? 'translate-y-0 opacity-100' : '-translate-y-3 opacity-0'}`
-      : 'absolute inset-y-0 right-0 z-20 flex w-full max-w-[21rem] flex-col border-l border-hair bg-surface shadow-[-12px_0_32px_rgba(26,32,30,0.10)]'}>
+    <div className="absolute inset-y-0 right-0 z-20 flex w-full max-w-[21rem] flex-col border-l border-hair bg-surface shadow-[-12px_0_32px_rgba(26,32,30,0.10)]">
       <div className="flex items-center justify-between border-b border-hair px-4 py-3">
         <span className="min-w-0">
           <span className="block truncate text-sm font-medium text-ink">{otherName ?? t.none}</span>
@@ -177,30 +157,6 @@ export default function ChatDrawer({
               <Row k={t.name} v={prof.full_name ?? t.none} />
               <Row k={t.dob} v={prof.date_of_birth ? dateShort(prof.date_of_birth) : t.none} />
               <Row k={t.email} v={<span className="break-all">{prof.email ?? t.none}</span>} />
-              {otherRole === 'user' && (
-                <Row k={t.workEmail} v={weEdit ? (
-                  <span className="flex items-center gap-1.5">
-                    <input value={weVal} onChange={e => setWeVal(e.target.value)}
-                      className="w-44 rounded-lg border border-hair bg-white px-2 py-1 font-mono text-xs text-ink outline-none focus:border-petrol" />
-                    <button onClick={() => void saveWorkEmail()} disabled={weBusy}
-                      className="font-mono text-[10px] uppercase tracking-wider text-petrol transition hover:text-petrol-hover">
-                      {t.weSave}
-                    </button>
-                    <button onClick={() => setWeEdit(false)}
-                      className="font-mono text-[10px] uppercase tracking-wider text-faint transition hover:text-ink">
-                      {t.weCancel}
-                    </button>
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-2">
-                    <span className="break-all">{prof.work_email ?? t.none}</span>
-                    <button onClick={() => { setWeVal(prof.work_email ?? ''); setWeEdit(true) }}
-                      className="font-mono text-[10px] uppercase tracking-wider text-petrol transition hover:text-petrol-hover">
-                      {t.weSet}
-                    </button>
-                  </span>
-                )} />
-              )}
               <Row k={t.ssn} v={
                 <span className="inline-flex items-center gap-2 font-mono">
                   {ssnShow ? (ssn === '' ? t.ssnNone : ssn) : '•••-••-••••'}
@@ -223,6 +179,7 @@ export default function ChatDrawer({
             <Sect h={t.status}>
               <Row k={t.kyc} v={kycBadge(prof.kyc_status)} />
               <Row k={t.ekyc} v={kycBadge(prof.enhanced_kyc_status ?? 'none')} />
+              <Row k={t.open} v={prof.open_to_work ? t.on : t.off} />
               {(prof.is_suspended || prof.is_banned) && (
                 <Row k={t.status} v={prof.is_banned ? t.banned : t.suspended} />
               )}

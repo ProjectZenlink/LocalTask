@@ -36,8 +36,6 @@ const COPY = {
     stGrey: '未完成', stYellow: '待验收', stReview: '待平台复核', stGreen: '已入账', stReopen: '跳审核',
     reopenBtn: '跳审核', resolveBtn: '已解决,重新提交', reopenQ: '跳审核原因(会显示给平台复核):',
     resolveQ: '确认账号问题已解决?该项将回到「待平台复核」,由管理员二次把关。处理细节记得在 WhatsApp/Telegram 同步。', reopenNote: '跳审核原因:',
-    customT: '自定义账号', recName: '名称', recNamePh: '例如：公司 Gmail / 银行 App',
-    delBtn: '删除', delGo: '确认删除', delNo: '取消', customEmpty: '还没有自定义账号。',
     accept: '验收', reaccept: '重新验收', acceptedOn: '验收于', rejectedNote: '被驳回:', records: '账号资料', addRec: '＋ 添加账号',
     login: '账号', pw: '密码', twofa: '二步验证(2FA)', phone: '手机号码', sms: '接码链接', recStatus: '状态', rsActive: '正常', rsPending: '待审核', rsReview: '审核中', rsClosed: '已关闭',
     expires: '手机号到期日', notes: '备注', save: '保存', saving: '保存中…', cancel: '取消', edit: '编辑',
@@ -45,7 +43,7 @@ const COPY = {
     noRec: '还没有账号资料。',
     suspend: '暂停接单', resume: '恢复接单', suspended: '已暂停',
     suspendQ: '暂停原因(内部记录):',
-    circleHint: '是否完成由你（AM）认定：验收即计入，平台仅复核提成。',
+    circleHint: '每一项要走完三关才计提成：① TA 完成任务 → ② 你验收 → ③ 平台复核通过。',
     profileLink: '查看档案', otherT: '其他任务(逐单验收)', otherEmpty: '没有已完成的「其他」类型任务。', est: '预计', otherHint: '「其他」不占开通清单;每单单独走三关,金额按单笔覆盖或费率表。',
   },
   en: {
@@ -53,8 +51,6 @@ const COPY = {
     stGrey: 'Not done', stYellow: 'To accept', stReview: 'In platform review', stGreen: 'Credited', stReopen: 'Flagged',
     reopenBtn: 'Flag', resolveBtn: 'Resolved — resubmit', reopenQ: 'Flag reason (visible to platform review):',
     resolveQ: 'Confirm resolved? It returns to platform review for a second check. Sync details on WhatsApp/Telegram.', reopenNote: 'Flag reason:',
-    customT: 'Custom accounts', recName: 'Name', recNamePh: 'e.g. Corporate Gmail / Bank app',
-    delBtn: 'Delete', delGo: 'Confirm delete', delNo: 'Cancel', customEmpty: 'No custom accounts yet.',
     accept: 'Accept', reaccept: 'Re-accept', acceptedOn: 'Accepted', rejectedNote: 'Rejected:', records: 'Account records', addRec: '＋ Add account',
     login: 'Login', pw: 'Password', twofa: '2FA', phone: 'Phone number', sms: 'SMS inbox link', recStatus: 'Status', rsActive: 'Active', rsPending: 'Pending', rsReview: 'In review', rsClosed: 'Closed',
     expires: 'Phone expires on', notes: 'Notes', save: 'Save', saving: 'Saving…', cancel: 'Cancel', edit: 'Edit',
@@ -62,12 +58,12 @@ const COPY = {
     noRec: 'No account records yet.',
     suspend: 'Pause', resume: 'Resume', suspended: 'Paused',
     suspendQ: 'Pause reason (internal):',
-    circleHint: 'Completion is decided by you (the AM); the platform only reviews commission.',
+    circleHint: 'Each item clears three gates before it pays: ① they finish → ② you accept → ③ platform approves.',
     profileLink: 'Full profile', otherT: 'Other tasks (per-task acceptance)', otherEmpty: 'No completed "Other" tasks.', est: 'est.', otherHint: '"Other" tasks skip the 8-item list; each clears the three gates on its own.',
   },
 }
 
-const REC_EMPTY = { custom_name: '', account_login: '', account_password: '', twofa: '', phone_number: '', sms_link: '', phone_expires_on: '', notes: '', status: 'active' }
+const REC_EMPTY = { account_login: '', account_password: '', twofa: '', phone_number: '', sms_link: '', phone_expires_on: '', notes: '', status: 'active' }
 
 function daysUntil(iso: string): number {
   const a = new Date(iso + 'T00:00:00')
@@ -104,7 +100,6 @@ export default function AmFreelancerBoard() {
   const [recEditing, setRecEditing] = useState<'new' | string | null>(null)
   const [recForm, setRecForm] = useState(REC_EMPTY)
   const [recBusy, setRecBusy] = useState(false)
-  const [delId, setDelId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     if (!id || !am) return
@@ -212,26 +207,16 @@ export default function AmFreelancerBoard() {
     if (!r) { setRecEditing('new'); setRecForm(REC_EMPTY); return }
     setRecEditing(r.id)
     setRecForm({
-      custom_name: r.custom_name ?? '',
       account_login: r.account_login ?? '', account_password: r.account_password ?? '',
       twofa: r.twofa ?? '', phone_number: r.phone_number ?? '', sms_link: r.sms_link ?? '', status: r.status ?? 'active',
       phone_expires_on: r.phone_expires_on ?? '', notes: r.notes ?? '',
     })
   }
 
-  async function delRec(rid: string) {
-    setRecBusy(true); setError(null)
-    const { error: e } = await supabase.from('account_records').delete().eq('id', rid)
-    setRecBusy(false)
-    if (e) { setError(e.message); return }
-    setDelId(null); await load()
-  }
-
   async function saveRec(type: PlatformType) {
     if (!id) return
     setRecBusy(true); setError(null)
     const payload = {
-      ...(type === 'Other' ? { custom_name: recForm.custom_name.trim() || null } : {}),
       account_login: recForm.account_login.trim() || null,
       account_password: recForm.account_password.trim() || null,
       twofa: recForm.twofa.trim() || null,
@@ -263,10 +248,6 @@ export default function AmFreelancerBoard() {
   const recFormCard = (type: PlatformType) => (
     <div className="mt-3 rounded-xl border border-petrol/25 bg-paper p-4">
       <div className="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
-        {type === 'Other' && (
-          <Field label={t.recName} value={recForm.custom_name} placeholder={t.recNamePh}
-            onChange={e => setRecForm({ ...recForm, custom_name: e.target.value })} />
-        )}
         <Field label={t.login} value={recForm.account_login} onChange={e => setRecForm({ ...recForm, account_login: e.target.value })} />
         <Field label={t.pw} value={recForm.account_password} onChange={e => setRecForm({ ...recForm, account_password: e.target.value })} />
         <Field label={t.twofa} value={recForm.twofa} onChange={e => setRecForm({ ...recForm, twofa: e.target.value })} />
@@ -413,85 +394,6 @@ export default function AmFreelancerBoard() {
             </div>
           )
         })}
-
-        {/* v80:自定义账号(Other 记录 · m53 窄口删除权) */}
-        <div className="border-t border-hair pt-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <span className="w-24 font-display text-sm font-medium text-ink">{t.customT}</span>
-              <span className="font-mono text-xs text-faint">{records.filter(r => r.task_type === 'Other').length}</span>
-            </div>
-            <Button variant="ghost" className="px-3 py-1.5 text-xs"
-              onClick={() => { setOpenType(openType === 'Other' ? null : 'Other'); setRecEditing(null); setDelId(null) }}>
-              {t.records}
-            </Button>
-          </div>
-          {openType === 'Other' && (
-            <div className="mt-1">
-              {records.filter(r => r.task_type === 'Other').length === 0 && recEditing !== 'new' && (
-                <p className="mt-2 text-sm text-faint">{t.customEmpty}</p>
-              )}
-              {records.filter(r => r.task_type === 'Other').map(r => (
-                <div key={r.id} className="mt-2 rounded-lg border border-hair bg-white p-3">
-                  <div className="mb-1.5 flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-medium text-ink">{r.custom_name ?? '—'}</span>
-                    <span className={`font-mono text-[10px] uppercase tracking-wider ${
-                      (r.status ?? 'active') === 'active' ? 'text-verified-text'
-                      : ['pending', 'review'].includes(r.status ?? 'active') ? 'text-pending-text' : 'text-danger-text'
-                    }`}>
-                      {(r.status ?? 'active') === 'active' ? t.rsActive : (r.status ?? 'active') === 'pending' ? t.rsPending : (r.status ?? 'active') === 'review' ? t.rsReview : t.rsClosed}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-1 gap-x-6 gap-y-1.5 text-xs sm:grid-cols-2">
-                    <p><span className="text-faint">{t.login}: </span><span className="font-mono text-ink">{r.account_login ?? '—'}</span></p>
-                    <p><span className="text-faint">{t.pw}: </span>{r.account_password ? <SecretText value={r.account_password} /> : '—'}</p>
-                    <p className="flex flex-wrap items-center gap-2"><span className="text-faint">{t.twofa}: </span>{r.twofa ? <><SecretText value={r.twofa} /><TotpCode secret={r.twofa} /></> : '—'}</p>
-                    <p>
-                      <span className="text-faint">{t.phone}: </span>
-                      <span className="font-mono text-ink">{r.phone_number ?? '—'}</span>
-                      {r.sms_link && <> · <a href={r.sms_link} target="_blank" rel="noreferrer" className="text-petrol underline underline-offset-2">SMS</a></>}
-                      {r.phone_expires_on && (
-                        <span className={`ml-2 font-mono ${daysUntil(r.phone_expires_on) <= 3 ? 'text-danger-text' : 'text-faint'}`}>
-                          {r.phone_expires_on} · {t.daysLeft(daysUntil(r.phone_expires_on))}
-                        </span>
-                      )}
-                    </p>
-                  </div>
-                  {r.notes && <p className="mt-1.5 text-xs text-muted">{r.notes}</p>}
-                  <div className="mt-2 flex items-center gap-3">
-                    <button onClick={() => startRec('Other', r)}
-                      className="font-mono text-[10px] uppercase tracking-wider text-petrol transition hover:text-petrol-hover">
-                      {t.edit}
-                    </button>
-                    {delId === r.id ? (
-                      <span className="flex items-center gap-2">
-                        <button onClick={() => void delRec(r.id)} disabled={recBusy}
-                          className="font-mono text-[10px] uppercase tracking-wider text-danger-text transition hover:opacity-80">
-                          {t.delGo}
-                        </button>
-                        <button onClick={() => setDelId(null)}
-                          className="font-mono text-[10px] uppercase tracking-wider text-faint transition hover:text-ink">
-                          {t.delNo}
-                        </button>
-                      </span>
-                    ) : (
-                      <button onClick={() => setDelId(r.id)}
-                        className="font-mono text-[10px] uppercase tracking-wider text-faint transition hover:text-danger-text">
-                        {t.delBtn}
-                      </button>
-                    )}
-                  </div>
-                  {recEditing === r.id && recFormCard('Other')}
-                </div>
-              ))}
-              {recEditing === 'new' ? recFormCard('Other') : (
-                <Button variant="ghost" className="mt-2 px-3 py-1.5 text-xs" onClick={() => startRec('Other', null)}>
-                  {t.addRec}
-                </Button>
-              )}
-            </div>
-          )}
-        </div>
       </Card>
 
       <Card className="mt-5 p-5">

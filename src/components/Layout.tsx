@@ -52,11 +52,6 @@ function LayoutInner({ children }: { children: ReactNode }) {
   }, [session, profile])
   const [askOut, setAskOut] = useState(false)
   const { lang, toggle } = useI18n()
-  // v79:FR 界面锁定英文(中文暂屏蔽)
-  useEffect(() => {
-    if (profile?.role === 'user' && lang !== 'en') toggle()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile?.role, lang])
   const t = COPY[lang]
 
   const TABS = [
@@ -77,11 +72,9 @@ function LayoutInner({ children }: { children: ReactNode }) {
         <div className="mx-auto flex max-w-4xl items-center justify-between px-5 py-4">
           <Link to="/" className="flex items-center gap-2.5 font-display text-lg font-medium tracking-tight text-ink"><LogoMark />LocalTask</Link>
           <nav className="flex items-center gap-5 text-sm">
-            {profile?.role !== 'user' && (
-              <button onClick={toggle} className="font-mono text-[11px] uppercase tracking-wider text-faint transition hover:text-ink">
-                {lang === 'en' ? '中文' : 'EN'}
-              </button>
-            )}
+            <button onClick={toggle} className="font-mono text-[11px] uppercase tracking-wider text-faint transition hover:text-ink">
+              {lang === 'en' ? '中文' : 'EN'}
+            </button>
             {session ? (
               isAdmin || isAm ? (
                 <>

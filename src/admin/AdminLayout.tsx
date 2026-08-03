@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react'
-import { getDockOpen, subscribeDock } from '../lib/dockState'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
@@ -37,9 +36,6 @@ const NAV_GROUPS = [
 function Shell() {
   const { lang, toggle } = useLang()
   const navigate = useNavigate()
-  // v77 并排工作区:统一状态源
-  const [dockOpen, setDockOpen] = useState(getDockOpen)
-  useEffect(() => subscribeDock(setDockOpen), [])
   const { pathname } = useLocation()
   const [askOut, setAskOut] = useState(false)
   const [reviewCount, setReviewCount] = useState(0)
@@ -107,12 +103,10 @@ function Shell() {
           </>
         }
       />
-      <div className={`transition-[padding] duration-300 ${dockOpen ? 'lg:pr-[400px]' : ''}`}>
-        <main className="mx-auto max-w-6xl px-5 py-8">
+      <main className="mx-auto max-w-6xl px-5 py-8">
         <Outlet />
         <AdminTodoDock />
       </main>
-        </div>
       <MessagesDock myRole="admin" />
       <ConfirmDialog
         open={askOut}

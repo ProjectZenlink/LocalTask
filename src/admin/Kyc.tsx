@@ -24,26 +24,21 @@ interface PendingSub {
   ssn_last4: string | null
   ssn_full: string | null
   kind: 'base' | 'enhanced'
-  managed_by: string | null
 }
 interface DocLink { doc_type: string; path: string; url: string }
 
 const COPY = {
   zh: {
-    title: 'KYC 审核', sub: '按提交顺序审核身份材料。通过后 freelancer 才可被派单。',
+    title: 'KYC 审核', sub: '按提交顺序审核身份材料。通过后 freelancer 才能开启接单。',
     empty: '没有待审核的提交,全部处理完毕。', review: '查看材料', approve: '通过', reject: '驳回',
     saving: '保存中…', loading: '加载材料…', submitted: '提交于', rejectQ: '驳回原因(内部记录):',
     rejectDefault: '材料不清晰', dob: '生日', dlgCancel: '取消', search: '按名字或邮箱搜索…',
-    tabBase: '基础 KYC', tabEnh: 'Enhanced KYC',
-    unowned: '无主 · 审核即收编',
   },
   en: {
-    title: 'KYC review', sub: 'Review identity submissions in order. Freelancers become assignable after approval.',
+    title: 'KYC review', sub: 'Review identity submissions in order. Freelancers can open to work only after approval.',
     empty: 'No pending submissions. All caught up.', review: 'Review documents', approve: 'Approve', reject: 'Reject',
     saving: 'Saving…', loading: 'Loading documents…', submitted: 'submitted', rejectQ: 'Rejection reason (internal):',
     rejectDefault: 'Documents unclear', dob: 'DOB', dlgCancel: 'Cancel', search: 'Search by name or email…',
-    tabBase: 'Base KYC', tabEnh: 'Enhanced KYC',
-    unowned: 'Unassigned · adopts on approve',
   },
 }
 
@@ -69,8 +64,6 @@ export default function AdminKyc() {
   const amScope = useLocation().pathname.startsWith('/am')
   const base = amScope ? '/am/pool' : '/admin/pool'
   const [queue, setQueue] = useState<PendingSub[]>([])
-  const [tab, setTab] = useState<'base' | 'enhanced'>('base')
-  const [myAm, setMyAm] = useState<string | null>(null)
   const [q, setQ] = useState('')
   const [open, setOpen] = useState<string | null>(null)
   const [docs, setDocs] = useState<DocLink[]>([])
@@ -88,7 +81,7 @@ export default function AdminKyc() {
     const rows = subs ?? []
     const ids = [...new Set(rows.map(s => s.user_id))]
     const [profRes, ssnRes] = await Promise.all([
-      ids.length ? supabase.from('profiles').select('id, full_name, display_name, email, date_of_birth, address, city, state, address_zip, managed_by').in('id', ids) : Promise.resolve({ data: [] as never[] }),
+      ids.length ? supabase.from('profiles').select('id, full_name, display_name, email, date_of_birth, address, city, state, address_zip').in('id', ids) : Promise.resolve({ data: [] as never[] }),
       ids.length ? supabase.from('kyc_ssn').select('user_id, ssn_last4, ssn_full').in('user_id', ids) : Promise.resolve({ data: [] as { user_id: string; ssn_last4: string | null; ssn_full: string | null }[] }),
     ])
     const profs = new Map((profRes.data ?? []).map(p => [p.id, p]))
@@ -108,7 +101,6 @@ export default function AdminKyc() {
         city: pr?.city ?? null,
         state: pr?.state ?? null,
         address_zip: pr?.address_zip ?? null,
-        managed_by: (pr as { managed_by?: string | null } | undefined)?.managed_by ?? null,
         ssn_last4: ssns.get(s.user_id)?.ssn_last4 ?? null,
         ssn_full: ssns.get(s.user_id)?.ssn_full ?? null,
         kind: (s as { kind?: 'base' | 'enhanced' }).kind ?? 'base',
@@ -117,10 +109,6 @@ export default function AdminKyc() {
   }, [])
 
   useEffect(() => { void loadQueue() }, [loadQueue])
-  useEffect(() => {
-    if (!amScope) return
-    void supabase.rpc('current_am_id').then(({ data }) => setMyAm((data as string | null) ?? null))
-  }, [amScope])
 
   async function openSub(sub: PendingSub) {
     setOpen(sub.id); setDocs([]); setError(null)
@@ -157,32 +145,15 @@ export default function AdminKyc() {
     await loadQueue()
   }
 
-  // v73 ③:AM 只见「名下 + 无主」(审无主 = 触发 m48 自动收编闭环);AD 见全部
-  const scoped = amScope
-    ? (myAm === null ? [] : queue.filter(x => x.managed_by === myAm || x.managed_by === null))
-    : queue
-  const baseN = scoped.filter(x => x.kind === 'base').length
-  const enhN = scoped.filter(x => x.kind === 'enhanced').length
-  const byTab = scoped.filter(x => x.kind === tab)
   const needle = q.trim().toLowerCase()
   const shown = needle
-    ? byTab.filter(x => [x.full_name, x.display_name, x.email].some(v => (v ?? '').toLowerCase().includes(needle)))
-    : byTab
+    ? queue.filter(x => [x.full_name, x.display_name, x.email].some(v => (v ?? '').toLowerCase().includes(needle)))
+    : queue
 
   return (
     <div className="mx-auto max-w-3xl">
       <PageHeading sub={t.sub}>{t.title}</PageHeading>
       {error && <Alert tone="error">{error}</Alert>}
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        {([['base', t.tabBase, baseN], ['enhanced', t.tabEnh, enhN]] as const).map(([k, lab, n]) => (
-          <button key={k} onClick={() => setTab(k)}
-            className={`rounded-full border px-3 py-1 font-mono text-[11px] tracking-wide transition ${
-              tab === k ? 'border-petrol bg-petrol text-paper' : 'border-hair text-muted hover:text-ink'
-            }`}>
-            {lab}{n > 0 && <span className="ml-1.5 opacity-80">{n}</span>}
-          </button>
-        ))}
-      </div>
       <div className="mb-4">
         <Input value={q} onChange={e => setQ(e.target.value)} placeholder={t.search} />
       </div>
@@ -197,9 +168,6 @@ export default function AdminKyc() {
                 <div>
                   <span className="flex items-center gap-2">
                     <Link to={`${base}/${sub.user_id}`} className="text-sm text-ink transition hover:text-petrol">{sub.full_name ?? sub.display_name ?? sub.user_id.slice(0, 8)}</Link>
-                    {sub.managed_by === null && (
-                      <span className="rounded-full border border-inactive-border px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-wider text-inactive-text">{t.unowned}</span>
-                    )}
                     {sub.kind === 'enhanced' && (
                       <span className="rounded-full border border-petrol/30 bg-petrol/5 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-petrol">Enhanced</span>
                     )}

@@ -50,7 +50,7 @@ const COPY = {
     
    
     pause: '暂停', resume: '恢复', block: '封禁', unblock: '解封', claim: '认领到我名下', boardLink: '清单',
-    paused: '已暂停', blocked: '已封禁',
+    paused: '已暂停', blocked: '已封禁', open: '开着接单', closed: '未开接单',
     blockQ: '封禁是给欺诈用的,可靠性问题请用「暂停」。确认永久封禁?', confirmBlock: '确认封禁', dlgCancel: '取消',
   },
   en: {

@@ -25,13 +25,13 @@ interface SharedTask {
 }
 
 const STATUS_ZH: Record<TaskStatus, { label: string; s: 'verified' | 'pending' | 'unverified' }> = {
-  unassigned: { label: 'Scheduling', s: 'pending' },
-  offered: { label: 'Scheduling', s: 'pending' },
-  in_progress: { label: 'In progress', s: 'pending' },
-  under_review: { label: 'Under review', s: 'pending' },
-  pending_payment: { label: 'Awaiting payment', s: 'verified' },
-  completed: { label: 'Completed & settled', s: 'verified' },
-  cancelled: { label: 'Cancelled', s: 'unverified' },
+  unassigned: { label: '安排中', s: 'pending' },
+  offered: { label: '安排中', s: 'pending' },
+  in_progress: { label: '进行中', s: 'pending' },
+  under_review: { label: '交付审核中', s: 'pending' },
+  pending_payment: { label: '待您付款', s: 'verified' },
+  completed: { label: '已完成并结清', s: 'verified' },
+  cancelled: { label: '已取消', s: 'unverified' },
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -61,10 +61,10 @@ export default function ShareTask() {
 
       <main className="mx-auto max-w-2xl px-5 py-8">
         {!loaded ? (
-          <p className="text-muted">Loading…</p>
+          <p className="text-muted">加载中…</p>
         ) : !task ? (
           <Card className="p-6 text-center">
-            <p className="text-sm text-muted">This link is invalid or has expired. Please ask your contact for a fresh one.</p>
+            <p className="text-sm text-muted">链接无效或已失效。请联系您的对接人重新获取。</p>
           </Card>
         ) : (
           <>
@@ -73,56 +73,56 @@ export default function ShareTask() {
                 <h1 className="font-display text-2xl font-medium tracking-tight text-ink">{task.title}</h1>
                 <p className="mt-2 font-mono text-xs text-faint">
                   {usd(task.amount)}
-                  {task.deadline && <> · Due {dateTimeShort(task.deadline)}</>}
+                  {task.deadline && <> · 截止 {dateTimeShort(task.deadline)}</>}
                 </p>
               </div>
               <StatusBadge status={STATUS_ZH[task.status].s} label={STATUS_ZH[task.status].label} />
             </div>
 
             <Card className="mb-5 p-5">
-              <SectionTitle>Task brief</SectionTitle>
+              <SectionTitle>任务说明</SectionTitle>
               {task.description
                 ? <p className="text-sm leading-relaxed text-ink"><Linkified text={task.description} /></p>
                 : <p className="text-sm text-faint">—</p>}
               <div className="mt-4 border-t border-hair pt-4">
-                <SectionTitle>Acceptance criteria</SectionTitle>
+                <SectionTitle>验收标准</SectionTitle>
                 <p className="text-sm leading-relaxed text-ink"><Linkified text={task.acceptance_criteria} /></p>
               </div>
             </Card>
 
             {(task.payout_method === PP_KEY ? !!pick(task, K_PAYOUT_PP_EMAIL) : (task.payout_address && task.payout_network && task.payout_token)) && (
               <Card className="mb-5 border-verified-border bg-verified-bg p-5">
-                <SectionTitle>Payment</SectionTitle>
+                <SectionTitle>付款信息</SectionTitle>
                 <p className="text-sm leading-relaxed text-ink">
-                  The task has passed acceptance. Please pay using the details below:
+                  任务已通过验收,请按以下方式付款:
                 </p>
                 {task.payout_method === PP_KEY ? (
                   <>
                     <p className="mt-2 font-mono text-xs text-ink">{usd(task.amount)} · Payment account</p>
                     <p className="mt-1 break-all font-mono text-xs text-ink">{pick(task, K_PAYOUT_PP_EMAIL)}</p>
                     {task.status === 'completed' && task.tx_hash ? (
-                      <p className="mt-3 text-sm text-verified-text">✓ Settled · Ref <span className="font-mono">{shortHash(task.tx_hash)}</span></p>
+                      <p className="mt-3 text-sm text-verified-text">✓ 本单已结清 · 参考号 <span className="font-mono">{shortHash(task.tx_hash)}</span></p>
                     ) : (
-                      <p className="mt-3 text-xs text-muted">After paying, please send the receipt to your contact.</p>
+                      <p className="mt-3 text-xs text-muted">付款完成后,请把交易凭证发给您的对接人。</p>
                     )}
                   </>
                 ) : (
                   <>
                     <p className="mt-2 font-mono text-xs text-ink">
                       {task.payout_token === 'ETH'
-                        ? `ETH equal to ${usd(task.amount)} at market rate`
+                        ? `按市价折合 ${usd(task.amount)} 的 ETH`
                         : money(task.amount, task.payout_token!)}
                       {' · '}{payoutLabel(task.payout_network!, task.payout_token!)}
                     </p>
                     <p className="mt-1 break-all font-mono text-xs text-ink">{task.payout_address}</p>
                     {task.status === 'completed' && task.tx_hash ? (
                       <p className="mt-3 text-sm text-verified-text">
-                        ✓ Settled · Tx{' '}
+                        ✓ 本单已结清 · 交易{' '}
                         <a href={txUrl(task.payout_network!, task.tx_hash)} target="_blank" rel="noreferrer"
                           className="font-mono underline underline-offset-2">{shortHash(task.tx_hash)}</a>
                       </p>
                     ) : (
-                      <p className="mt-3 text-xs text-muted">After paying, please send the transaction hash (TxID) to your contact.</p>
+                      <p className="mt-3 text-xs text-muted">付款完成后,请把交易哈希(TxID)发给您的对接人。</p>
                     )}
                   </>
                 )}
@@ -130,7 +130,7 @@ export default function ShareTask() {
             )}
 
             <p className="text-center font-mono text-[11px] uppercase tracking-[0.2em] text-faint">
-              LocalTask · Read-only page
+              LocalTask · 只读页面
             </p>
           </>
         )}

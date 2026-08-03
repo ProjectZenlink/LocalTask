@@ -14,7 +14,7 @@ import type { Lead, LeadStatus } from '../types/database'
  *  下半区 = 线索列表(AM 看名下,admin 看全部):状态流转 + 专属注册链接 + 进入对话。
  *  实时机制照搬 v59/v60:切页 + 30s 轮询 + 回焦 + workline 即时刷新。 */
 
-type Row = Lead & { am: { id: string; name: string } | null } & { source: 'join' | 'whatsapp' | 'signup'; email: string | null; converted_profile: string | null; prof: { display_name: string | null; contact_whatsapp: string | null; email: string | null } | null }
+type Row = Lead & { am: { id: string; name: string } | null } & { source: 'join' | 'whatsapp'; email: string | null; converted_profile: string | null; prof: { display_name: string | null; contact_whatsapp: string | null; email: string | null } | null }
 
 const COPY = {
   zh: {
@@ -23,13 +23,11 @@ const COPY = {
     poolEmpty: '暂无可认领线索。', mine: '我的线索', all: '全部线索', listEmpty: '还没有线索。',
     claim: '认领', chat: '对话', copyLink: '注册链接', copied: '已复制',
     filterAll: '全部', noReply: '未回', owner: '归属', unowned: '无归属',
-    srcAll: '全部来源', srcJoin: 'Join', srcWa: 'WhatsApp', srcSignup: '注册', pendingReg: '待注册',
+    srcAll: '全部来源', srcJoin: 'Join', srcWa: 'WhatsApp', pendingReg: '待注册',
     invite: '生成 WhatsApp 邀请', inviteTitle: 'WhatsApp 邀请',
     invNote: '客户备注(1–60 字,如:老王·广告A)', invCreate: '生成', invBusy: '生成中…',
     invDone: '邀请已生成 —— 把这个注册链接发给客户:', invCopy: '复制链接', invClose: '完成',
-    destroy: '销毁', destroyTitle: '销毁邀请',
-    destroyAsk: '未转化的邀请删除后不可恢复。确定销毁与这位客户的邀请吗?',
-    destroyCancel: '取消', destroyGo: '确认销毁',
+    destroy: '销毁', destroyAsk: '销毁这个邀请?未转化的邀请删除后不可恢复。',
     searchPh: '搜索名字 / WhatsApp / 邮箱…',
     waited: (m: number) => `等待 ${m} 分钟`, assign: '改派给…',
     copyManual: '复制失败,请手动复制:',
@@ -40,13 +38,11 @@ const COPY = {
     poolEmpty: 'Nothing to claim right now.', mine: 'My leads', all: 'All leads', listEmpty: 'No leads yet.',
     claim: 'Claim', chat: 'Chat', copyLink: 'Signup link', copied: 'Copied',
     filterAll: 'All', noReply: 'No reply', owner: 'Owner', unowned: 'Unassigned',
-    srcAll: 'All sources', srcJoin: 'Join', srcWa: 'WhatsApp', srcSignup: 'Signup', pendingReg: 'Awaiting signup',
+    srcAll: 'All sources', srcJoin: 'Join', srcWa: 'WhatsApp', pendingReg: 'Awaiting signup',
     invite: 'New WhatsApp invite', inviteTitle: 'WhatsApp invite',
     invNote: 'Customer note (1–60 chars, e.g. Wang · Ad A)', invCreate: 'Generate', invBusy: 'Generating…',
     invDone: 'Invite created — send this signup link to the customer:', invCopy: 'Copy link', invClose: 'Done',
-    destroy: 'Destroy', destroyTitle: 'Destroy invite',
-    destroyAsk: 'Unconverted invites are gone for good. Destroy the invite for this customer?',
-    destroyCancel: 'Cancel', destroyGo: 'Destroy',
+    destroy: 'Destroy', destroyAsk: 'Destroy this invite? Unconverted invites are gone for good.',
     searchPh: 'Search name / WhatsApp / email…',
     waited: (m: number) => `waiting ${m}m`, assign: 'Reassign to…',
     copyManual: 'Copy failed — copy manually:',
@@ -64,13 +60,12 @@ export default function LeadsDesk({ isAdmin, amId }: { isAdmin: boolean; amId: s
   const [copied, setCopied] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [srcPill, setSrcPill] = useState<'all' | 'join' | 'whatsapp' | 'signup'>('all')
+  const [srcPill, setSrcPill] = useState<'all' | 'join' | 'whatsapp'>('all')
   const [q, setQ] = useState('')
   const [inv, setInv] = useState(false)
   const [invNote, setInvNote] = useState('')
   const [invBusy, setInvBusy] = useState(false)
   const [invLink, setInvLink] = useState<string | null>(null)
-  const [destroyTarget, setDestroyTarget] = useState<Row | null>(null)
 
   const load = useCallback(async () => {
     const q = supabase.from('leads')
@@ -158,13 +153,7 @@ export default function LeadsDesk({ isAdmin, amId }: { isAdmin: boolean; amId: s
     setError(null)
     const { error: e } = await supabase.rpc('open_conversation', { p_other: target })
     if (e) { setError(e.message); return }
-    // v75 ②:AM 可选小窗/整页;admin 恒整页
-    const chatMode = localStorage.getItem('lt_chat_open') === 'dock' ? 'dock' : 'page'
-    if (!isAdmin && chatMode === 'dock') {
-      window.dispatchEvent(new CustomEvent('lt-open-dock', { detail: { with: target } }))
-      return
-    }
-    navigate(`${isAdmin ? '/admin' : '/am'}/messages?with=${target}`)
+    navigate(`${isAdmin ? '/admin' : '/am'}/messages?with=${target}`)  // v69 ①:直达该会话
   }
 
   async function createInvite() {
@@ -180,10 +169,10 @@ export default function LeadsDesk({ isAdmin, amId }: { isAdmin: boolean; amId: s
   }
 
   async function destroyInvite(l: Row) {
+    if (!window.confirm(t.destroyAsk)) return
     setError(null)
     const { error: e } = await supabase.rpc('am_destroy_invite', { p_lead: l.id })
     if (e) { setError(e.message); return }
-    setDestroyTarget(null)
     pingWorkline(); await load()
   }
 
@@ -237,9 +226,9 @@ export default function LeadsDesk({ isAdmin, amId }: { isAdmin: boolean; amId: s
         <input value={q} onChange={e => setQ(e.target.value)} placeholder={t.searchPh}
           className="w-full max-w-xs rounded-xl border border-hair bg-white px-3 py-1.5 text-sm outline-none focus:border-petrol" />
         <span className="mx-1 hidden h-4 w-px bg-hair sm:block" />
-        {(['all', 'join', 'whatsapp', 'signup'] as const).map(k => (
+        {(['all', 'join', 'whatsapp'] as const).map(k => (
           <button key={k} className={pillCls(srcPill === k)} onClick={() => setSrcPill(k)}>
-            {k === 'all' ? t.srcAll : k === 'join' ? t.srcJoin : k === 'whatsapp' ? t.srcWa : t.srcSignup}
+            {k === 'all' ? t.srcAll : k === 'join' ? t.srcJoin : t.srcWa}
           </button>
         ))}
         <span className="mx-1 hidden h-4 w-px bg-hair sm:block" />
@@ -266,10 +255,8 @@ export default function LeadsDesk({ isAdmin, amId }: { isAdmin: boolean; amId: s
                 <p className="flex items-center gap-2 truncate text-sm font-medium text-ink">
                   {personOf(l).name}
                   <span className={`rounded-full border px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider ${
-                    l.source === 'whatsapp' ? 'border-petrol/40 text-petrol'
-                      : l.source === 'signup' ? 'border-verified-border text-verified-text'
-                      : 'border-hair text-faint'
-                  }`}>{l.source === 'whatsapp' ? t.srcWa : l.source === 'signup' ? t.srcSignup : t.srcJoin}</span>
+                    l.source === 'whatsapp' ? 'border-petrol/40 text-petrol' : 'border-hair text-faint'
+                  }`}>{l.source === 'whatsapp' ? t.srcWa : t.srcJoin}</span>
                   {l.source === 'whatsapp' && !l.converted_profile && canFlow && (
                     <span className="rounded-full border border-inactive-border px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-wider text-inactive-text">
                       {t.pendingReg}
@@ -321,7 +308,7 @@ export default function LeadsDesk({ isAdmin, amId }: { isAdmin: boolean; amId: s
               )}
               {l.source === 'whatsapp' && canFlow && (
                 <Button variant="ghost" className="border-danger-border px-3 py-1.5 text-xs text-danger-text"
-                  onClick={() => setDestroyTarget(l)}>
+                  onClick={() => void destroyInvite(l)}>
                   {t.destroy}
                 </Button>
               )}
@@ -333,23 +320,6 @@ export default function LeadsDesk({ isAdmin, amId }: { isAdmin: boolean; amId: s
           )
         })}
       </Card>
-
-      {destroyTarget && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-ink/30 p-4" onClick={() => setDestroyTarget(null)}>
-          <div className="w-full max-w-sm rounded-2xl border border-hair bg-white p-5 shadow-sm" onClick={e => e.stopPropagation()}>
-            <p className="mb-2 font-mono text-[11px] uppercase tracking-wider text-danger-text">{t.destroyTitle}</p>
-            <p className="mb-1 text-sm font-medium text-ink">{personOf(destroyTarget).name}</p>
-            <p className="mb-4 text-sm leading-relaxed text-muted">{t.destroyAsk}</p>
-            <div className="flex gap-2">
-              <Button variant="ghost" className="flex-1" onClick={() => setDestroyTarget(null)}>{t.destroyCancel}</Button>
-              <Button variant="ghost" className="flex-1 border-danger-border text-danger-text hover:bg-white"
-                onClick={() => void destroyInvite(destroyTarget)}>
-                {t.destroyGo}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {inv && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-ink/30 p-4" onClick={() => setInv(false)}>

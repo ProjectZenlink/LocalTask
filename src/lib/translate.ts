@@ -39,18 +39,3 @@ export function prewarmTranslate(): void {
     body: { message_ids: [], target_lang: 'en' },
   }).catch(() => { /* 预热失败无碍 */ })
 }
-
-/** v79 快译条:草稿文本直译(不落库);formality 仅作重译扰动位 */
-export async function translateDraft(
-  text: string, target: ChatLang, formality?: 'default' | 'more' | 'less',
-): Promise<string | null> {
-  try {
-    const { data, error } = await supabase.functions.invoke('translate-draft', {
-      body: { text, target_lang: target, formality: formality ?? 'default' },
-    })
-    if (error) return null
-    return (data as { text?: string } | null)?.text ?? null
-  } catch {
-    return null
-  }
-}

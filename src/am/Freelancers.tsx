@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { bjDay } from '../lib/format'
 import type { PoolRow } from '../types/database'
@@ -12,16 +12,16 @@ const COPY = {
   zh: {
     title: '我的 Freelancer', sub: '你名下的人才:负载与签到一览。三个入口:清单验收、完整档案、直接派任务。',
     empty: '名下还没有人。去', poolLink: '人才库', empty2: '认领无归属的 freelancer。',
-    chat: '对话', board: '清单', profile: '档案', assign: '派任务', search: '按名字/联系方式搜索…', ciNone: '今日未签到', ciPending: '确认签到', ciDone: '签到已复核 ✓',
+    board: '清单', profile: '档案', assign: '派任务', search: '按名字/联系方式搜索…', ciNone: '今日未签到', ciPending: '确认签到', ciDone: '签到已复核 ✓',
     active: '活跃', done: '完成', suspended: '已暂停',
-    fAll: '全部', fCi: '今日签到待确认', fKycPending: 'KYC 待审核', fKycDone: 'KYC 已完成', reviewGo: '去审核', noMatch: '没有匹配的人。',
+    fAll: '全部', fCi: '今日签到待确认', fKycPending: 'KYC 待审核', fKycDone: 'KYC 已完成', noMatch: '没有匹配的人。',
   },
   en: {
     title: 'My freelancers', sub: 'Your roster with load and check-ins at a glance. Three doors: checklist, full profile, assign a task.',
     empty: 'Nobody yet. Claim unowned freelancers in the', poolLink: 'Pool', empty2: '.',
-    chat: 'Chat', board: 'Checklist', profile: 'Profile', assign: 'Assign task', search: 'Search by name / contact…', ciNone: 'No check-in today', ciPending: 'Confirm check-in', ciDone: 'Check-in confirmed ✓',
+    board: 'Checklist', profile: 'Profile', assign: 'Assign task', search: 'Search by name / contact…', ciNone: 'No check-in today', ciPending: 'Confirm check-in', ciDone: 'Check-in confirmed ✓',
     active: 'active', done: 'done', suspended: 'Paused',
-    fAll: 'All', fCi: 'Check-ins to confirm', fKycPending: 'KYC pending', fKycDone: 'KYC verified', reviewGo: 'Review', noMatch: 'No one matches.',
+    fAll: 'All', fCi: 'Check-ins to confirm', fKycPending: 'KYC pending', fKycDone: 'KYC verified', noMatch: 'No one matches.',
   },
 }
 
@@ -44,7 +44,6 @@ function useFocusFlash() {
 }
 
 export default function AmFreelancers() {
-  const navigate = useNavigate()
   useFocusFlash()
   const { lang } = useLang()
   const t = COPY[lang]
@@ -66,20 +65,6 @@ export default function AmFreelancers() {
     }
     setCi(map)
   }, [bjToday])
-
-
-  // v74.1:名下直达对话(深链 /am/messages?with=)
-  async function openChat(id: string) {
-    const { error: e } = await supabase.rpc('open_conversation', { p_other: id })
-    if (e) { setError(e.message); return }
-    // v75 ②:按偏好落小窗或整页
-    const chatMode = localStorage.getItem('lt_chat_open') === 'dock' ? 'dock' : 'page'
-    if (chatMode === 'dock') {
-      window.dispatchEvent(new CustomEvent('lt-open-dock', { detail: { with: id } }))
-      return
-    }
-    navigate(`/am/messages?with=${id}`)
-  }
 
   async function confirmCi(id: string) {
     setCiBusy(id)
@@ -136,10 +121,6 @@ export default function AmFreelancers() {
             {label}{n !== null ? ` · ${n}` : ''}
           </button>
         ))}
-        <Link to="/am/kyc"
-          className="ml-auto inline-flex items-center gap-1.5 self-center rounded-full border border-petrol/40 px-3 py-1 font-mono text-[11px] uppercase tracking-wider text-petrol transition hover:bg-petrol hover:text-paper">
-          {t.reviewGo}{counts.kyc_pending > 0 && <span className="opacity-80">· {counts.kyc_pending}</span>}
-        </Link>
       </div>
       {error && <Alert tone="error">{error}</Alert>}
 
@@ -153,15 +134,12 @@ export default function AmFreelancers() {
         ) : shown.map(r => (
           <div key={r.id} id={`f-${r.id}`} className="flex flex-wrap items-center justify-between gap-3 border-b border-hair px-5 py-3.5 last:border-b-0">
             <div className="min-w-0">
-              <div className="flex items-center gap-3">
-                <Link to={`/am/pool/${r.id}`}
-                  className="w-40 min-w-0 truncate text-sm font-medium text-ink hover:text-petrol sm:w-52">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <Link to={`/am/pool/${r.id}`} className="text-sm font-medium text-ink hover:text-petrol">
                   {r.display_name ?? r.id.slice(0, 8)}
                 </Link>
-                <span className="flex shrink-0 items-center gap-1.5">
-                  <StatusBadge status={KYC_BADGE[r.kyc_status]} label={r.kyc_status} />
-                  {r.is_suspended && <StatusBadge status="pending" label={t.suspended} />}
-                </span>
+                <StatusBadge status={KYC_BADGE[r.kyc_status]} label={r.kyc_status} />
+                {r.is_suspended && <StatusBadge status="pending" label={t.suspended} />}
               </div>
               <p className="mt-1 font-mono text-xs text-faint">
                 {r.active_tasks} {t.active} · {r.completed_tasks} {t.done}
@@ -179,7 +157,6 @@ export default function AmFreelancers() {
               )}
               <Link to={`/am/f/${r.id}`}><Button className="px-3 py-1.5 text-xs">{t.board}</Button></Link>
               <Link to={`/am/pool/${r.id}`}><Button variant="ghost" className="px-3 py-1.5 text-xs">{t.profile}</Button></Link>
-              <Button variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => void openChat(r.id)}>{t.chat}</Button>
               <Link to={`/am/tasks/new?fl=${r.id}`}><Button variant="ghost" className="px-3 py-1.5 text-xs">{t.assign}</Button></Link>
             </div>
           </div>

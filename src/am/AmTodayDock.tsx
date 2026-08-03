@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { getDockOpen, subscribeDock } from '../lib/dockState'
 import { Link, useLocation } from 'react-router-dom'
 import { Sparkles, ChevronDown } from 'lucide-react'
 import { supabase } from '../lib/supabase'
@@ -39,8 +38,6 @@ const POLL_MS = 30_000
 const FLASH_MS = 4_000
 
 export default function AmTodayDock({ amId }: { amId: string }) {
-  const [dockOpen, setDockOpen] = useState(getDockOpen)
-  useEffect(() => subscribeDock(setDockOpen), [])
   const { lang } = useLang()
   const t = COPY[lang]
   const { pathname } = useLocation()
@@ -165,7 +162,7 @@ export default function AmTodayDock({ amId }: { amId: string }) {
   if (folded) {
     return (
       <button onClick={toggle}
-        className={`fixed bottom-5  z-30 flex items-center gap-2 rounded-full border border-hair bg-surface px-3.5 py-2 font-mono text-[11px] uppercase tracking-wider text-muted shadow-[0_8px_28px_rgba(26,32,30,0.16)] transition hover:text-ink transition-[right] duration-300 ${dockOpen ? 'right-4 lg:right-[416px]' : 'right-5'}`}>
+        className="fixed bottom-5 right-5 z-30 flex items-center gap-2 rounded-full border border-hair bg-surface px-3.5 py-2 font-mono text-[11px] uppercase tracking-wider text-muted shadow-[0_8px_28px_rgba(26,32,30,0.16)] transition hover:text-ink">
         <Sparkles size={13} strokeWidth={1.75} className="text-petrol" />
         {t.title}
         {total > 0 && (
@@ -176,7 +173,7 @@ export default function AmTodayDock({ amId }: { amId: string }) {
   }
 
   return (
-    <div className={`fixed bottom-5 z-30 w-64 rounded-2xl border border-hair bg-surface p-4 shadow-[0_16px_48px_rgba(26,32,30,0.18)] transition-[right] duration-300 ${dockOpen ? 'right-4 lg:right-[416px]' : 'right-5'}`}>
+    <div className="fixed bottom-5 right-5 z-30 w-64 rounded-2xl border border-hair bg-surface p-4 shadow-[0_16px_48px_rgba(26,32,30,0.18)]">
       <div className="mb-2 flex items-center justify-between">
         <p className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.2em] text-petrol">
           <Sparkles size={12} strokeWidth={1.75} /> {t.title}

@@ -22,9 +22,7 @@ const COPY = {
         autoPh: '例如:我暂时不在,看到消息会尽快回复你。', autoOn: '已开启', autoOff: '已关闭',
         autoSave: '保存设置', autoSaved: '已保存。', autoTurnOn: '开启并保存',
         avatarT: '头像', avatarSub: '将在消息与工作台中展示。JPG/PNG/WebP,单张 ≤2MB。',
-        avUpload: '上传头像', avChange: '更换', avRemove: '移除', avBad: '仅支持 JPG/PNG/WebP 且 ≤2MB。',
-        chatOpenT: '对话打开方式', chatOpenSub: '从人才库 / 线索 / 我的 Freelancer 点「对话」时的落点。',
-        optDock: '小窗消息', optPage: '消息页面' },
+        avUpload: '上传头像', avChange: '更换', avRemove: '移除', avBad: '仅支持 JPG/PNG/WebP 且 ≤2MB。' },
   en: { title: 'My profile', sub: 'Your identity, numbers at a glance and contact info.',
         email: 'Login email', joined: 'Joined', name: 'Name', wa: 'WhatsApp (with country code)', tg: 'Telegram username', x: 'X (Twitter) username',
         save: 'Save', saving: 'Saving…', saved: 'Saved.',
@@ -37,9 +35,7 @@ const COPY = {
         autoPh: 'e.g. I am away right now — I will get back to you shortly.', autoOn: 'On', autoOff: 'Off',
         autoSave: 'Save', autoSaved: 'Saved.', autoTurnOn: 'Turn on & save',
         avatarT: 'Avatar', avatarSub: 'Shown in messages and the workbench. JPG/PNG/WebP, up to 2 MB.',
-        avUpload: 'Upload avatar', avChange: 'Change', avRemove: 'Remove', avBad: 'JPG/PNG/WebP only, up to 2 MB.',
-        chatOpenT: 'Chat opens in', chatOpenSub: 'Where the Chat button lands from Pool / Leads / My freelancers.',
-        optDock: 'Dock window', optPage: 'Messages page' },
+        avUpload: 'Upload avatar', avChange: 'Change', avRemove: 'Remove', avBad: 'JPG/PNG/WebP only, up to 2 MB.' },
 }
 
 export default function AmMe() {
@@ -62,8 +58,6 @@ export default function AmMe() {
   const [avBusy, setAvBusy] = useState(false)
   const [avErr, setAvErr] = useState<string | null>(null)
   const avFileRef = useRef<HTMLInputElement>(null)
-  const [chatMode, setChatMode] = useState<'page' | 'dock'>(
-    () => (localStorage.getItem('lt_chat_open') === 'dock' ? 'dock' : 'page'))
 
   useEffect(() => {
     if (!user) return
@@ -186,19 +180,39 @@ export default function AmMe() {
     <div className="mx-auto max-w-2xl">
       <PageHeading sub={t.sub}>{t.title}</PageHeading>
 
+      {/* v70 A2:头像 */}
+      <Card className="mb-5 flex flex-wrap items-center gap-4 p-5">
+        <span className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full border border-hair bg-white font-display text-xl font-medium text-muted">
+          {avatarUrl ? <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
+                     : (am?.name ?? '?').trim().charAt(0).toUpperCase()}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block font-mono text-[11px] uppercase tracking-wider text-faint">{t.avatarT}</span>
+          <span className="mt-0.5 block text-xs leading-relaxed text-muted">{t.avatarSub}</span>
+          {avErr && <span className="mt-1 block text-xs text-danger-text">{avErr}</span>}
+        </span>
+        <span className="flex shrink-0 gap-2">
+          <Button className="px-3.5 py-1.5 text-xs" disabled={avBusy}
+            onClick={() => avFileRef.current?.click()}>
+            {avBusy ? '…' : avatarUrl ? t.avChange : t.avUpload}
+          </Button>
+          {avatarUrl && (
+            <Button variant="ghost" className="px-3.5 py-1.5 text-xs" disabled={avBusy}
+              onClick={() => void removeAvatar()}>
+              {t.avRemove}
+            </Button>
+          )}
+        </span>
+        <input ref={avFileRef} type="file" accept="image/jpeg,image/png,image/webp"
+          className="hidden" onChange={e => void onAvatarFile(e)} />
+      </Card>
       {error && <Alert tone="error">{error}</Alert>}
 
       {/* 报头式身份卡 */}
       <Card className="mb-4 p-6">
         <div className="flex items-center gap-4">
-          <span className="group/av relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-petrol font-display text-xl font-medium text-paper">
-            {avatarUrl ? <img src={avatarUrl} alt="" className="h-full w-full object-cover" /> : initial}
-            <button onClick={() => avFileRef.current?.click()} disabled={avBusy}
-              className="absolute inset-0 hidden items-center justify-center bg-ink/45 font-mono text-[9px] uppercase tracking-wider text-paper group-hover/av:flex">
-              {avBusy ? '…' : avatarUrl ? t.avChange : (lang === 'zh' ? '上传' : 'Upload')}
-            </button>
-            <input ref={avFileRef} type="file" accept="image/jpeg,image/png,image/webp"
-              className="hidden" onChange={e => void onAvatarFile(e)} />
+          <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-petrol font-display text-xl font-medium text-paper">
+            {initial}
           </span>
           <div className="min-w-0">
             <p className="flex items-center gap-2 truncate font-display text-xl font-medium tracking-tight text-ink">
@@ -207,35 +221,9 @@ export default function AmMe() {
             </p>
             <p className="mt-1 truncate font-mono text-xs text-faint">
               {t.email} {user?.email} · {t.joined} {dateShort(am.created_at)}
-              {avatarUrl && (
-                <button onClick={() => void removeAvatar()} disabled={avBusy}
-                  className="ml-2 text-danger-text/70 underline-offset-2 transition hover:text-danger-text hover:underline">
-                  {t.avRemove}
-                </button>
-              )}
             </p>
-            {avErr && <p className="mt-1 text-xs text-danger-text">{avErr}</p>}
           </div>
         </div>
-      </Card>
-
-      {/* v75 ②:对话打开方式 */}
-      <Card className="mb-4 flex flex-wrap items-center justify-between gap-3 p-4">
-        <span className="min-w-0">
-          <span className="block font-mono text-[11px] uppercase tracking-wider text-faint">{t.chatOpenT}</span>
-          <span className="mt-0.5 block text-xs text-muted">{t.chatOpenSub}</span>
-        </span>
-        <span className="flex gap-1.5">
-          {(['dock', 'page'] as const).map(k => (
-            <button key={k}
-              onClick={() => { setChatMode(k); localStorage.setItem('lt_chat_open', k) }}
-              className={`rounded-full border px-3 py-1.5 font-mono text-[11px] tracking-wide transition ${
-                chatMode === k ? 'border-petrol bg-petrol text-paper' : 'border-hair text-muted hover:text-ink'
-              }`}>
-              {k === 'dock' ? t.optDock : t.optPage}
-            </button>
-          ))}
-        </span>
       </Card>
 
       {/* 四枚数据瓦片:等宽大数字 = 单据感 */}

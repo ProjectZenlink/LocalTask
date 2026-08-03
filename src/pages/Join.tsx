@@ -109,30 +109,6 @@ function JoinInner() {
     return (data ?? null) as LeadRow | null
   }, [])
 
-  // v73 ②:换轨解析 —— 重取线索、定位当前对话目标、开线并接管 fastConv
-  async function resolveConv(): Promise<string | null> {
-    const { data: sess } = await supabase.auth.getSession()
-    const uid = sess.session?.user.id
-    if (!uid) return null
-    const l = await fetchLead(uid)
-    if (l) setLead(l)
-    const target = l?.am?.user_id
-      ?? (l && !l.assigned_am && l.status !== 'converted' ? supUid : null)
-    if (!target) return null
-    const { data } = await supabase.rpc('open_conversation', { p_other: target })
-    const id = (data as string | null) ?? null
-    if (id) setFastConv(id)
-    return id
-  }
-
-  // v73 ②:聊天态 15s 轻询 —— 认领/换归属瞬间自动换轨,通知即时可见
-  useEffect(() => {
-    if (phase !== 'ready' || !lead || lead.status === 'converted') return
-    const iv = window.setInterval(() => { void resolveConv() }, 15000)
-    return () => window.clearInterval(iv)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, lead?.status, supUid])
-
   // v67 保险丝:初探 2.5s 未决 → 强制落表单,杜绝白屏
   useEffect(() => {
     if (phase !== 'probe') return
@@ -345,7 +321,7 @@ function JoinInner() {
                 </div>
                 <div className="h-[62vh] min-h-[24rem]">
                   {liveConv && user ? (
-                    <LeadChat onConvLost={resolveConv} conversationId={liveConv} meId={user.id} otherId={chatTarget || null} lang={lang} readOnly={converted} />
+                    <LeadChat conversationId={liveConv} meId={user.id} otherId={chatTarget || null} lang={lang} readOnly={converted} />
                   ) : (
                     <p className="pt-16 text-center text-sm text-faint">…</p>
                   )}
