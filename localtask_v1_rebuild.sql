@@ -4918,6 +4918,134 @@ begin
 end $$;
 
 
+
+
+
+-- ================================================================
+-- m52 合并块:注册即线索(source signup · 自然注册入池 · 认领即收编开线)
+-- ================================================================
+-- 1. 线索来源扩容:注册直入(signup)
+alter table public.leads drop constraint if exists lead_source_chk;
+alter table public.leads add constraint lead_source_chk
+  check (source in ('join', 'whatsapp', 'signup'));
+
+-- 1b. 号码形状约束扩容:signup 与 whatsapp 同享"可空"(有号仍须 E.164)
+alter table public.leads drop constraint if exists lead_wa_shape;
+alter table public.leads add constraint lead_wa_shape
+  check ((wa_e164 is null and source in ('whatsapp', 'signup'))
+      or (wa_e164 is not null and wa_e164 ~ '^\+[1-9][0-9]{6,14}$'));
+
+-- 2. 自然注册入池(handle_new_user 整函数重写)
+create or replace function public.handle_new_user()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  v_role public.user_role := 'user';
+  v_code text;
+  v_ref  uuid;
+  v_lead public.leads%rowtype;
+begin
+  -- m42:匿名会话(访客线索)→ 建 lead 档;跳过邮箱域名检查与员工码逻辑
+  if new.email is null or btrim(new.email::text) = '' then
+    insert into public.profiles (id, role)
+    values (new.id, 'lead')
+    on conflict (id) do nothing;
+    return new;
+  end if;
+
+  if not public.email_domain_allowed(new.email::text) then
+    raise exception 'Disposable email domains are not allowed. Please sign up with a real inbox.';
+  end if;
+
+  if coalesce(new.raw_user_meta_data ->> 'staff_code', '') <> '' then
+    select value into v_code from public.app_settings where key = 'staff_invite_code';
+    if v_code is not null and new.raw_user_meta_data ->> 'staff_code' = v_code then
+      v_role := 'pending';
+    end if;
+  end if;
+  insert into public.profiles (id, display_name, role, email)
+  values (new.id, new.raw_user_meta_data ->> 'display_name', v_role, new.email)
+  on conflict (id) do nothing;
+
+  -- m42:专属注册链接携带 lead_ref → 线索转化 + 归属绑定(跨设备生效)
+  begin
+    v_ref := nullif(btrim(coalesce(new.raw_user_meta_data ->> 'lead_ref', '')), '')::uuid;
+  exception when others then
+    v_ref := null;
+  end;
+  if v_ref is not null and v_role = 'user' then
+    select * into v_lead from public.leads
+     where ref_token = v_ref and status <> 'converted';
+    if found then
+      update public.leads
+         set status = 'converted', converted_profile = new.id, converted_at = now(),
+             email = coalesce(nullif(btrim(new.email::text), ''), email)  -- m47:注册邮箱回填
+       where id = v_lead.id;
+      if v_lead.assigned_am is not null then
+        update public.profiles set managed_by = v_lead.assigned_am where id = new.id;
+      end if;
+    end if;
+  end if;
+
+  -- m52:自然注册(无邀请码或未命中线索)→ 直接进入线索认领池
+  if v_role = 'user'
+     and not exists (select 1 from public.leads where converted_profile = new.id) then
+    insert into public.leads (full_name, wa_e164, status, source, email,
+                              converted_profile, converted_at)
+    values (coalesce(nullif(btrim(new.raw_user_meta_data ->> 'display_name'), ''),
+                     split_part(new.email::text, '@', 1)),
+            null, 'new', 'signup', new.email::text, new.id, now());
+  end if;
+
+  return new;
+end $$;
+
+-- 3. 认领注册线 = 收编+开线+通知(claim_lead 整函数重写)
+drop function if exists public.claim_lead(uuid);
+create or replace function public.claim_lead(p_lead uuid)
+returns json language plpgsql security definer set search_path = public as $$
+declare
+  v_me uuid := public.current_am_id();
+  v_me_user uuid := auth.uid();
+  v_me_name text;
+  v_l public.leads%rowtype;
+  v_old_user uuid;
+  v_conv uuid;
+begin
+  if v_me is null then raise exception '仅账户经理可认领线索。'; end if;
+  select * into v_l from public.leads where id = p_lead for update;
+  if not found then raise exception '线索不存在。'; end if;
+  if v_l.status <> 'new' or v_l.first_reply_at is not null
+     or (v_l.assigned_am is not null
+         and v_l.assigned_at >= now() - interval '3 minutes') then
+    raise exception '该线索当前不可认领(已被回复、认领未超时或状态已变更)。';
+  end if;
+  -- m52:注册即线索(source=signup,无匿名会话档)→ 认领 = 直接收编 + 开线 + 分配通知
+  if v_l.profile_id is null and v_l.converted_profile is not null then
+    update public.leads
+       set assigned_am = v_me, assigned_at = now(), status = 'converted'
+     where id = p_lead;
+    update public.profiles set managed_by = v_me
+     where id = v_l.converted_profile and managed_by is null;
+    select a.name into v_me_name from public.account_managers a where a.id = v_me;
+    v_conv := public.open_conversation(v_l.converted_profile);
+    insert into public.messages (conversation_id, sender_id, body, kind)
+    values (v_conv, v_me_user,
+            json_build_object('k', 'assigned', 'am', v_me_name)::text, 'system');
+    return json_build_object('ok', true, 'conversation_id', v_conv);
+  end if;
+
+  select a.user_id into v_old_user from public.account_managers a where a.id = v_l.assigned_am;
+  v_old_user := coalesce(v_old_user, public.support_profile_id());
+  select a.name into v_me_name from public.account_managers a where a.id = v_me;
+
+  update public.leads set assigned_am = v_me, assigned_at = now() where id = p_lead;
+  v_conv := public.lead_thread_assign(v_l.profile_id, v_old_user, v_me_user, v_me_name, false, false);
+  return json_build_object('ok', true, 'conversation_id', v_conv);
+end $$;
+revoke execute on function public.claim_lead(uuid) from public, anon;
+grant  execute on function public.claim_lead(uuid) to authenticated, service_role;
+
+
 -- 11. 自检输出（跑完看这个结果）
 --     期望：tables = 35，enums = 11，public_policies = 80，storage = 15  (m44 基线)
 --           storage_policies = 21，buckets = 5  (m47)
