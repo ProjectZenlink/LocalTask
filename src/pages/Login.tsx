@@ -79,13 +79,16 @@ export default function Login() {
       <Button onClick={handleLogin} disabled={busy || !captchaToken} className="mt-2 w-full">
         {busy ? t.busy : t.cta}
       </Button>
-      <p className="mt-5 text-sm text-muted">
-        <button type="button" onClick={() => navigate('/forgot')}
-          className="mt-3 block w-full text-center font-mono text-[11px] uppercase tracking-wider text-faint transition hover:text-ink">
-          {t.forgot}
-        </button>
-        {t.noAccount} <Link to="/signup" className="text-petrol underline underline-offset-2">{t.signup}</Link>
-      </p>
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-2 border-t border-hair pt-4">
+          <span className="text-sm text-muted">
+            {t.noAccount}{' '}
+            <Link to="/signup" className="text-petrol underline underline-offset-2">{t.signup}</Link>
+          </span>
+          <button type="button" onClick={() => navigate('/forgot')}
+            className="font-mono text-[11px] uppercase tracking-wider text-faint transition hover:text-ink">
+            {t.forgot}
+          </button>
+        </div>
     </div>
     </AuthShell>
   )
