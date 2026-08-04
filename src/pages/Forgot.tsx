@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { Card, Button, Alert, Input, Label } from '../components/ui'
 import LogoMark from '../components/LogoMark'
+import CaptchaBox, { type TurnstileInstance } from '../components/CaptchaBox'
 
 /** 忘记密码(v84):只发一封带按钮式核销链接的重置邮件——
  *  真正的令牌消耗发生在 /reset 页的人手点击,扫描器点不掉。 */
@@ -12,12 +13,18 @@ export default function Forgot() {
   const [busy, setBusy] = useState(false)
   const [sent, setSent] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null)
+  const captchaRef = useRef<TurnstileInstance>(null)
 
   async function send() {
     const v = email.trim()
     if (!v) { setError('Enter the email you signed up with.'); return }
     setBusy(true); setError(null)
-    const { error: e } = await supabase.auth.resetPasswordForEmail(v)
+    const { error: e } = await supabase.auth.resetPasswordForEmail(v, {
+      captchaToken: captchaToken ?? undefined,
+    })
+    captchaRef.current?.reset()
+    setCaptchaToken(null)
     setBusy(false)
     if (e) { setError(e.message); return }
     setSent(true)
@@ -47,7 +54,8 @@ export default function Forgot() {
               <Input type="email" value={email} onChange={e => setEmail(e.target.value)}
                 placeholder="you@example.com" autoComplete="email" />
             </div>
-            <Button className="mt-4 w-full" disabled={busy} onClick={() => void send()}>
+            <div className="mt-4"><CaptchaBox ref={captchaRef} action="login" onToken={setCaptchaToken} /></div>
+            <Button className="mt-3 w-full" disabled={busy || !captchaToken} onClick={() => void send()}>
               {busy ? '…' : 'Send reset email'}
             </Button>
             <button className="mt-3 font-mono text-[11px] uppercase tracking-wider text-faint transition hover:text-ink"
