@@ -5161,6 +5161,20 @@ revoke execute on function public.am_transfer_direct(uuid, uuid, text) from publ
 grant  execute on function public.am_transfer_direct(uuid, uuid, text) to authenticated, service_role;
 
 
+
+
+-- ================================================================
+-- m57 合并块:KYC Pro 批一(doc_kind 三选 · quality/mrz 位;枚举不动)
+-- ================================================================
+alter table public.kyc_submissions add column if not exists doc_kind text;
+alter table public.kyc_submissions drop constraint if exists kyc_doc_kind_chk;
+alter table public.kyc_submissions add constraint kyc_doc_kind_chk
+  check (doc_kind is null or doc_kind in ('passport', 'id', 'dl'));
+
+alter table public.kyc_submissions add column if not exists quality jsonb;
+alter table public.kyc_submissions add column if not exists mrz jsonb;
+
+
 -- 11. 自检输出（跑完看这个结果）
 --     期望：tables = 35，enums = 11，public_policies = 80，storage = 15  (m44 基线)
 --           storage_policies = 21，buckets = 5  (m47)
