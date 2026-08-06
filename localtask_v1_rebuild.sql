@@ -4686,6 +4686,481 @@ create trigger trg_zzz_kyc_adopt before update of kyc_status on public.profiles
 revoke execute on function public.kyc_adopt() from public, anon, authenticated;
 
 
+
+
+-- ================================================================
+-- m50 合并块:Performance 清零(策略包壳 · 外键索引 · 漂移清扫器)
+-- ================================================================
+-- 1. 策略壳(qual/with_check 逐条重设,表达式仅 auth.uid() 包壳,余字不动)
+alter policy p_am_select on public.account_managers using (((select auth.uid()) IS NOT NULL));
+alter policy p_am_self_upd on public.account_managers using ((user_id = (select auth.uid()))) with check ((user_id = (select auth.uid())));
+alter policy p_rec_user_sel on public.account_records using ((freelancer_id = (select auth.uid())));
+alter policy p_grants_select on public.bonus_grants using (((user_id = (select auth.uid())) OR is_admin() OR is_am()));
+alter policy p_checkins_select on public.checkins using (((user_id = (select auth.uid())) OR is_admin() OR is_am()));
+alter policy p_rates_read on public.commission_rates using (((select auth.uid()) IS NOT NULL));
+alter policy p_cprefs_own on public.conversation_prefs using ((user_id = (select auth.uid()))) with check ((user_id = (select auth.uid())));
+alter policy p_conv_select on public.conversations using (((a = (select auth.uid())) OR (b = (select auth.uid()))));
+alter policy p_crm_owner on public.crm_notes using ((owner_id = (select auth.uid()))) with check ((owner_id = (select auth.uid())));
+alter policy p_kyc_doc_insert on public.kyc_documents with check ((user_id = (select auth.uid())));
+alter policy p_kyc_doc_select on public.kyc_documents using (((user_id = (select auth.uid())) OR is_admin()));
+alter policy p_ssn_insert on public.kyc_ssn with check ((user_id = (select auth.uid())));
+alter policy p_ssn_select on public.kyc_ssn using (((user_id = (select auth.uid())) OR is_admin() OR is_am()));
+alter policy p_ssn_update on public.kyc_ssn using (((user_id = (select auth.uid())) OR is_admin())) with check (((user_id = (select auth.uid())) OR is_admin()));
+alter policy p_kyc_sub_insert on public.kyc_submissions with check ((user_id = (select auth.uid())));
+alter policy p_kyc_sub_select on public.kyc_submissions using (((user_id = (select auth.uid())) OR is_admin()));
+alter policy p_leads_self_sel on public.leads using ((profile_id = (select auth.uid())));
+alter policy p_reads_select on public.message_reads using ((EXISTS ( SELECT 1
+   FROM conversations c
+  WHERE ((c.id = message_reads.conversation_id) AND ((c.a = (select auth.uid())) OR (c.b = (select auth.uid())))))));
+alter policy p_msgs_select on public.messages using ((EXISTS ( SELECT 1
+   FROM conversations c
+  WHERE ((c.id = messages.conversation_id) AND ((c.a = (select auth.uid())) OR (c.b = (select auth.uid())))))));
+alter policy p_pm_self on public.payout_methods using ((user_id = (select auth.uid()))) with check ((user_id = (select auth.uid())));
+alter policy p_payout_select on public.payout_requests using (((user_id = (select auth.uid())) OR is_admin() OR (is_am() AND (am_id = current_am_id()))));
+alter policy p_pcr_select on public.profile_change_requests using (((user_id = (select auth.uid())) OR is_admin() OR (is_am() AND (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = profile_change_requests.user_id) AND (p.managed_by = current_am_id())))))));
+alter policy p_profiles_select on public.profiles using (((id = (select auth.uid())) OR is_admin()));
+alter policy p_profiles_update on public.profiles using (((id = (select auth.uid())) OR is_admin() OR (is_am() AND (role = 'user'::user_role))));
+alter policy p_qr_owner on public.quick_replies using ((owner_id = (select auth.uid()))) with check ((owner_id = (select auth.uid())));
+alter policy p_offers_select on public.task_offers using (((freelancer_id = (select auth.uid())) OR is_admin()));
+alter policy p_subs_insert on public.task_submissions with check (((freelancer_id = (select auth.uid())) OR is_admin()));
+alter policy p_subs_select on public.task_submissions using (((freelancer_id = (select auth.uid())) OR is_admin()));
+alter policy p_tasks_select on public.tasks using ((is_admin() OR (assigned_freelancer = (select auth.uid())) OR (EXISTS ( SELECT 1
+   FROM task_offers o
+  WHERE ((o.task_id = tasks.id) AND (o.freelancer_id = (select auth.uid())))))));
+alter policy st_avatar_del on storage.objects using (((bucket_id = 'avatars'::text) AND ((storage.foldername(name))[1] = ((select auth.uid()))::text)));
+alter policy st_avatar_ins on storage.objects with check (((bucket_id = 'avatars'::text) AND ((storage.foldername(name))[1] = ((select auth.uid()))::text)));
+alter policy st_avatar_upd on storage.objects using (((bucket_id = 'avatars'::text) AND ((storage.foldername(name))[1] = ((select auth.uid()))::text))) with check (((bucket_id = 'avatars'::text) AND ((storage.foldername(name))[1] = ((select auth.uid()))::text)));
+alter policy st_briefs_select on storage.objects using (((bucket_id = 'task-attachments'::text) AND ((storage.foldername(name))[1] = 'briefs'::text) AND (EXISTS ( SELECT 1
+   FROM tasks t
+  WHERE (((t.id)::text = (storage.foldername(objects.name))[2]) AND ((t.assigned_freelancer = (select auth.uid())) OR (EXISTS ( SELECT 1
+           FROM task_offers o
+          WHERE ((o.task_id = t.id) AND (o.freelancer_id = (select auth.uid())))))))))));
+alter policy st_chat_insert on storage.objects with check (((bucket_id = 'chat-attachments'::text) AND ((storage.foldername(name))[2] = ((select auth.uid()))::text) AND (EXISTS ( SELECT 1
+   FROM conversations c
+  WHERE (((c.id)::text = (storage.foldername(objects.name))[1]) AND ((c.a = (select auth.uid())) OR (c.b = (select auth.uid()))) AND line_active(c.a, c.b))))));
+alter policy st_chat_select on storage.objects using (((bucket_id = 'chat-attachments'::text) AND (EXISTS ( SELECT 1
+   FROM conversations c
+  WHERE (((c.id)::text = (storage.foldername(objects.name))[1]) AND ((c.a = (select auth.uid())) OR (c.b = (select auth.uid()))))))));
+alter policy st_kyc_insert on storage.objects with check (((bucket_id = 'kyc-documents'::text) AND ((storage.foldername(name))[1] = ((select auth.uid()))::text)));
+alter policy st_kyc_select on storage.objects using (((bucket_id = 'kyc-documents'::text) AND ((storage.foldername(name))[1] = ((select auth.uid()))::text)));
+alter policy st_sticker_del on storage.objects using (((bucket_id = 'chat-stickers'::text) AND ((storage.foldername(name))[1] = ((select auth.uid()))::text) AND (is_admin() OR is_am())));
+alter policy st_sticker_ins on storage.objects with check (((bucket_id = 'chat-stickers'::text) AND ((storage.foldername(name))[1] = ((select auth.uid()))::text) AND (is_admin() OR is_am())));
+alter policy st_sticker_sel on storage.objects using (((bucket_id = 'chat-stickers'::text) AND ((storage.foldername(name))[1] = ((select auth.uid()))::text)));
+alter policy st_submission_insert on storage.objects with check (((bucket_id = 'task-attachments'::text) AND ((storage.foldername(name))[1] = 'submissions'::text) AND ((storage.foldername(name))[3] = ((select auth.uid()))::text) AND (EXISTS ( SELECT 1
+   FROM tasks t
+  WHERE (((t.id)::text = (storage.foldername(objects.name))[2]) AND (t.assigned_freelancer = (select auth.uid())))))));
+alter policy st_submission_select on storage.objects using (((bucket_id = 'task-attachments'::text) AND ((storage.foldername(name))[1] = 'submissions'::text) AND ((storage.foldername(name))[3] = ((select auth.uid()))::text)));
+
+-- 2. 外键索引
+create index if not exists idx_kyc_submissions_user_id on public.kyc_submissions (user_id);
+create index if not exists idx_kyc_submissions_reviewed_by on public.kyc_submissions (reviewed_by);
+create index if not exists idx_kyc_documents_user_id on public.kyc_documents (user_id);
+create index if not exists idx_kyc_documents_submission_id on public.kyc_documents (submission_id);
+create index if not exists idx_blacklist_banned_user_id on public.blacklist (banned_user_id);
+create index if not exists idx_blacklist_created_by on public.blacklist (created_by);
+create index if not exists idx_account_managers_created_by on public.account_managers (created_by);
+create index if not exists idx_tasks_created_by on public.tasks (created_by);
+create index if not exists idx_tasks_paid_marked_by on public.tasks (paid_marked_by);
+create index if not exists idx_task_offers_created_by on public.task_offers (created_by);
+create index if not exists idx_task_submissions_freelancer_id on public.task_submissions (freelancer_id);
+create index if not exists idx_task_submissions_reviewed_by on public.task_submissions (reviewed_by);
+create index if not exists idx_freelancer_companies_created_by on public.freelancer_companies (created_by);
+create index if not exists idx_platform_acceptances_task_id on public.platform_acceptances (task_id);
+create index if not exists idx_platform_acceptances_am_id on public.platform_acceptances (am_id);
+create index if not exists idx_platform_acceptances_decided_by on public.platform_acceptances (decided_by);
+create index if not exists idx_platform_acceptances_reopened_by on public.platform_acceptances (reopened_by);
+create index if not exists idx_am_wallet_ledger_freelancer_id on public.am_wallet_ledger (freelancer_id);
+create index if not exists idx_am_wallet_ledger_created_by on public.am_wallet_ledger (created_by);
+create index if not exists idx_account_records_created_by on public.account_records (created_by);
+create index if not exists idx_tasks_rate_item_id on public.tasks (rate_item_id);
+create index if not exists idx_checkins_confirmed_by on public.checkins (confirmed_by);
+create index if not exists idx_profile_change_requests_reviewed_by on public.profile_change_requests (reviewed_by);
+create index if not exists idx_am_transfers_from_am on public.am_transfers (from_am);
+create index if not exists idx_am_transfers_to_am on public.am_transfers (to_am);
+create index if not exists idx_am_transfers_decided_by on public.am_transfers (decided_by);
+create index if not exists idx_conversations_b on public.conversations (b);
+create index if not exists idx_messages_sender_id on public.messages (sender_id);
+create index if not exists idx_message_reads_user_id on public.message_reads (user_id);
+create index if not exists idx_message_violations_user_id on public.message_violations (user_id);
+create index if not exists idx_message_violations_conversation_id on public.message_violations (conversation_id);
+create index if not exists idx_todos_created_by on public.todos (created_by);
+create index if not exists idx_todos_completed_by on public.todos (completed_by);
+create index if not exists idx_payout_requests_decided_by on public.payout_requests (decided_by);
+create index if not exists idx_leads_converted_profile on public.leads (converted_profile);
+create index if not exists idx_conversation_prefs_conversation_id on public.conversation_prefs (conversation_id);
+
+-- 3. 通用清扫器(漂移免疫):任何仍含裸 auth.uid() 的策略与仍未覆盖的外键,
+--    运行时逐个补齐(含生产专属遗留对象与未来漂移;主线世界为无害空转)
+do $$
+declare r record; nq text; nc text;
+begin
+  for r in
+    select schemaname, tablename, policyname, qual, with_check
+    from pg_policies
+    where schemaname in ('public', 'storage')
+      and (coalesce(qual, '') || coalesce(with_check, '')) ~ 'auth\.uid\(\)'
+      and (coalesce(qual, '') || coalesce(with_check, '')) !~ 'SELECT auth\.uid\(\)'
+  loop
+    nq := replace(r.qual, 'auth.uid()', '(select auth.uid())');
+    nc := replace(r.with_check, 'auth.uid()', '(select auth.uid())');
+    execute 'alter policy ' || quote_ident(r.policyname)
+         || ' on ' || quote_ident(r.schemaname) || '.' || quote_ident(r.tablename)
+         || coalesce(' using (' || nq || ')', '')
+         || coalesce(' with check (' || nc || ')', '');
+    raise notice '[包壳] %.%', r.tablename, r.policyname;
+  end loop;
+  for r in
+    select c.conrelid::regclass::text as t, a.attname as col
+    from pg_constraint c
+    join unnest(c.conkey) with ordinality k(attnum, ord) on ord = 1
+    join pg_attribute a on a.attrelid = c.conrelid and a.attnum = k.attnum
+    where c.contype = 'f' and c.connamespace = 'public'::regnamespace
+      and not exists (select 1 from pg_index i
+                      where i.indrelid = c.conrelid and i.indkey[0] = k.attnum)
+  loop
+    execute format('create index if not exists %I on public.%I (%I)',
+                   'idx_' || r.t || '_' || r.col, r.t, r.col);
+    raise notice '[补索引] %.%', r.t, r.col;
+  end loop;
+end $$;
+
+
+
+
+-- ================================================================
+-- m51 合并块:聊天权限图 v3(AM 主动面 = 名下 + 无主)
+-- ================================================================
+-- 1. 聊天权限图 v3(决策A):AM 主动面 = 名下 + 无主;线活性同步。
+--    整函数重写(json/boolean 同签名,执行权原样保留)。
+
+create or replace function public.can_message(p_sender uuid, p_recipient uuid)
+returns boolean language plpgsql stable security definer set search_path = public as $$
+declare
+  sr public.user_role; rr public.user_role;
+begin
+  if p_sender = p_recipient or p_sender is null or p_recipient is null then return false; end if;
+  select role into sr from public.profiles where id = p_sender;
+  select role into rr from public.profiles where id = p_recipient;
+  if sr is null or rr is null then return false; end if;
+  if sr = 'admin' then return true; end if;
+  if sr = 'am' then
+    if rr in ('admin', 'am') then return true; end if;
+    if rr = 'lead' then
+      return exists (select 1 from public.leads l
+                     join public.account_managers a on a.id = l.assigned_am
+                     where l.profile_id = p_recipient and a.user_id = p_sender);
+    end if;
+    -- m51:AM 可主动找「名下 + 无主」freelancer(与 KYC 审核范围同构;他人名下仍拒)
+    return exists (select 1 from public.profiles p
+                   where p.id = p_recipient and p.role = 'user'
+                     and (p.managed_by is null
+                          or exists (select 1 from public.account_managers a
+                                     where a.id = p.managed_by and a.user_id = p_sender)));
+  end if;
+  -- freelancer:只能主动找名下 AM
+  if sr = 'user' then
+    return rr = 'am' and exists (select 1 from public.profiles p
+                                 join public.account_managers a on a.id = p.managed_by
+                                 where p.id = p_sender and a.user_id = p_recipient);
+  end if;
+  -- lead:找归属顾问;或(m43)未归属未转化时找 LocalTask Support
+  if sr = 'lead' then
+    if p_recipient = public.support_profile_id() then
+      return exists (select 1 from public.leads l
+                     where l.profile_id = p_sender
+                       and l.assigned_am is null and l.status <> 'converted');
+    end if;
+    return rr = 'am' and exists (select 1 from public.leads l
+                                 join public.account_managers a on a.id = l.assigned_am
+                                 where l.profile_id = p_sender and a.user_id = p_recipient);
+  end if;
+  return false;
+end $$;
+
+create or replace function public.line_active(p_x uuid, p_y uuid)
+returns boolean language plpgsql stable security definer set search_path = public as $$
+declare
+  rx public.user_role; ry public.user_role;
+  fl uuid; other uuid;
+begin
+  select role into rx from public.profiles where id = p_x;
+  select role into ry from public.profiles where id = p_y;
+  -- lead 线:对面 admin 恒活;对面 Support 在"未归属未转化"期间可发(m43);
+  --         对面 AM 须为当前归属且未转化
+  if rx = 'lead' or ry = 'lead' then
+    fl := case when rx = 'lead' then p_x else p_y end;
+    other := case when rx = 'lead' then p_y else p_x end;
+    if (select role from public.profiles where id = other) = 'admin' then return true; end if;
+    if other = public.support_profile_id() then
+      return exists (select 1 from public.leads l
+                     where l.profile_id = fl
+                       and l.assigned_am is null and l.status <> 'converted');
+    end if;
+    return exists (select 1 from public.leads l
+                   join public.account_managers a on a.id = l.assigned_am
+                   where l.profile_id = fl and a.user_id = other and l.status <> 'converted');
+  end if;
+  if rx = 'user' and ry = 'user' then return false; end if;
+  if rx = 'user' or ry = 'user' then
+    fl := case when rx = 'user' then p_x else p_y end;
+    other := case when rx = 'user' then p_y else p_x end;
+    if (select role from public.profiles where id = other) = 'admin' then return true; end if;
+    -- m51:无主期间线保持可发;被他人认领后自动只读(既有换归属语义)
+    return exists (select 1 from public.profiles p
+                   where p.id = fl
+                     and (p.managed_by is null
+                          or exists (select 1 from public.account_managers a
+                                     where a.id = p.managed_by and a.user_id = other)));
+  end if;
+  return true;  -- am↔am / am↔admin / admin↔admin
+end $$;
+
+
+
+
+
+-- ================================================================
+-- m52 合并块:注册即线索(source signup · 自然注册入池 · 认领即收编开线)
+-- ================================================================
+-- 1. 线索来源扩容:注册直入(signup)
+alter table public.leads drop constraint if exists lead_source_chk;
+alter table public.leads add constraint lead_source_chk
+  check (source in ('join', 'whatsapp', 'signup'));
+
+-- 1b. 号码形状约束扩容:signup 与 whatsapp 同享"可空"(有号仍须 E.164)
+alter table public.leads drop constraint if exists lead_wa_shape;
+alter table public.leads add constraint lead_wa_shape
+  check ((wa_e164 is null and source in ('whatsapp', 'signup'))
+      or (wa_e164 is not null and wa_e164 ~ '^\+[1-9][0-9]{6,14}$'));
+
+-- 2. 自然注册入池(handle_new_user 整函数重写)
+create or replace function public.handle_new_user()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  v_role public.user_role := 'user';
+  v_code text;
+  v_ref  uuid;
+  v_lead public.leads%rowtype;
+begin
+  -- m42:匿名会话(访客线索)→ 建 lead 档;跳过邮箱域名检查与员工码逻辑
+  if new.email is null or btrim(new.email::text) = '' then
+    insert into public.profiles (id, role)
+    values (new.id, 'lead')
+    on conflict (id) do nothing;
+    return new;
+  end if;
+
+  if not public.email_domain_allowed(new.email::text) then
+    raise exception 'Disposable email domains are not allowed. Please sign up with a real inbox.';
+  end if;
+
+  if coalesce(new.raw_user_meta_data ->> 'staff_code', '') <> '' then
+    select value into v_code from public.app_settings where key = 'staff_invite_code';
+    if v_code is not null and new.raw_user_meta_data ->> 'staff_code' = v_code then
+      v_role := 'pending';
+    end if;
+  end if;
+  insert into public.profiles (id, display_name, role, email)
+  values (new.id, new.raw_user_meta_data ->> 'display_name', v_role, new.email)
+  on conflict (id) do nothing;
+
+  -- m42:专属注册链接携带 lead_ref → 线索转化 + 归属绑定(跨设备生效)
+  begin
+    v_ref := nullif(btrim(coalesce(new.raw_user_meta_data ->> 'lead_ref', '')), '')::uuid;
+  exception when others then
+    v_ref := null;
+  end;
+  if v_ref is not null and v_role = 'user' then
+    select * into v_lead from public.leads
+     where ref_token = v_ref and status <> 'converted';
+    if found then
+      update public.leads
+         set status = 'converted', converted_profile = new.id, converted_at = now(),
+             email = coalesce(nullif(btrim(new.email::text), ''), email)  -- m47:注册邮箱回填
+       where id = v_lead.id;
+      if v_lead.assigned_am is not null then
+        update public.profiles set managed_by = v_lead.assigned_am where id = new.id;
+      end if;
+    end if;
+  end if;
+
+  -- m52:自然注册(无邀请码或未命中线索)→ 直接进入线索认领池
+  if v_role = 'user'
+     and not exists (select 1 from public.leads where converted_profile = new.id) then
+    insert into public.leads (full_name, wa_e164, status, source, email,
+                              converted_profile, converted_at)
+    values (coalesce(nullif(btrim(new.raw_user_meta_data ->> 'display_name'), ''),
+                     split_part(new.email::text, '@', 1)),
+            null, 'new', 'signup', new.email::text, new.id, now());
+  end if;
+
+  return new;
+end $$;
+
+-- 3. 认领注册线 = 收编+开线+通知(claim_lead 整函数重写)
+drop function if exists public.claim_lead(uuid);
+create or replace function public.claim_lead(p_lead uuid)
+returns json language plpgsql security definer set search_path = public as $$
+declare
+  v_me uuid := public.current_am_id();
+  v_me_user uuid := auth.uid();
+  v_me_name text;
+  v_l public.leads%rowtype;
+  v_old_user uuid;
+  v_conv uuid;
+begin
+  if v_me is null then raise exception '仅账户经理可认领线索。'; end if;
+  select * into v_l from public.leads where id = p_lead for update;
+  if not found then raise exception '线索不存在。'; end if;
+  if v_l.status <> 'new' or v_l.first_reply_at is not null
+     or (v_l.assigned_am is not null
+         and v_l.assigned_at >= now() - interval '3 minutes') then
+    raise exception '该线索当前不可认领(已被回复、认领未超时或状态已变更)。';
+  end if;
+  -- m52:注册即线索(source=signup,无匿名会话档)→ 认领 = 直接收编 + 开线 + 分配通知
+  if v_l.profile_id is null and v_l.converted_profile is not null then
+    update public.leads
+       set assigned_am = v_me, assigned_at = now(), status = 'converted'
+     where id = p_lead;
+    update public.profiles set managed_by = v_me
+     where id = v_l.converted_profile and managed_by is null;
+    select a.name into v_me_name from public.account_managers a where a.id = v_me;
+    v_conv := public.open_conversation(v_l.converted_profile);
+    insert into public.messages (conversation_id, sender_id, body, kind)
+    values (v_conv, v_me_user,
+            json_build_object('k', 'assigned', 'am', v_me_name)::text, 'system');
+    return json_build_object('ok', true, 'conversation_id', v_conv);
+  end if;
+
+  select a.user_id into v_old_user from public.account_managers a where a.id = v_l.assigned_am;
+  v_old_user := coalesce(v_old_user, public.support_profile_id());
+  select a.name into v_me_name from public.account_managers a where a.id = v_me;
+
+  update public.leads set assigned_am = v_me, assigned_at = now() where id = p_lead;
+  v_conv := public.lead_thread_assign(v_l.profile_id, v_old_user, v_me_user, v_me_name, false, false);
+  return json_build_object('ok', true, 'conversation_id', v_conv);
+end $$;
+revoke execute on function public.claim_lead(uuid) from public, anon;
+grant  execute on function public.claim_lead(uuid) to authenticated, service_role;
+
+
+
+
+-- ================================================================
+-- m53 合并块:清单自定义账号(custom_name · Other 窄口删除权)
+-- ================================================================
+-- 自定义账号(v80):Other 类型记录的命名位(该类型此前零 UI 入口,无历史包袱)
+alter table public.account_records add column if not exists custom_name text;
+alter table public.account_records drop constraint if exists record_custom_name_chk;
+alter table public.account_records add constraint record_custom_name_chk
+  check (custom_name is null or char_length(btrim(custom_name)) between 1 and 40);
+
+-- 窄口删除权:仅 Other(自定义)记录,名下范围;标准八平台仍走 admin 治理
+drop policy if exists p_rec_am_del_custom on public.account_records;
+create policy p_rec_am_del_custom on public.account_records for delete
+  using (task_type = 'Other'
+         and exists (select 1 from public.profiles f
+                     where f.id = freelancer_id
+                       and f.managed_by = public.current_am_id()));
+
+
+
+-- ================================================================
+-- m54 合并块:AM 直接认定完成(am_accept 前置放行)
+-- ================================================================
+-- AM 直接认定完成(v81):am_accept 去除"须有已完成任务"前置;
+-- 有任务照旧挂靠计价,无任务按费率表入账;平台复核链原样。
+drop function if exists public.am_accept(uuid, public.platform_type);
+create or replace function public.am_accept(p_freelancer uuid, p_type public.platform_type)
+returns void language plpgsql security definer set search_path = public as $$
+declare v_am uuid; v_task uuid; v_override numeric; v_rate numeric; v_acc uuid;
+begin
+  v_am := public.current_am_id();
+  if v_am is null then raise exception '仅账户经理可验收。'; end if;
+  if not exists (select 1 from public.profiles f
+                 where f.id = p_freelancer and f.managed_by = v_am) then
+    raise exception '该 freelancer 不在你的名下。';
+  end if;
+  -- m54:完成与否由 AM 认定 —— 有已完成任务则挂靠(尊重单价覆盖),无也可直接验收
+  select t.id, t.commission_override into v_task, v_override from public.tasks t
+  where t.assigned_freelancer = p_freelancer
+    and t.task_type = p_type and t.status = 'completed'
+  order by t.freelancer_confirmed_at desc nulls last limit 1;
+
+  select amount into v_rate from public.commission_rates where task_type = p_type;
+
+  begin
+    insert into public.platform_acceptances
+      (freelancer_id, task_type, task_id, am_id, amount, status)
+    values (p_freelancer, p_type, v_task, v_am, coalesce(v_override, v_rate, 0), 'pending_admin')
+    returning id into v_acc;
+  exception when unique_violation then
+    raise exception '这一项已经验收过了（或正在等平台复核）。';
+  end;
+end $$;
+revoke execute on function public.am_accept(uuid, public.platform_type) from public, anon;
+grant  execute on function public.am_accept(uuid, public.platform_type) to authenticated, service_role;
+
+
+
+-- ================================================================
+-- m55 合并块:任务极简创建(criteria 可空) + profiles 进 realtime 发布
+-- ================================================================
+alter table public.tasks alter column acceptance_criteria drop not null;
+
+do $$
+begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime')
+     and not exists (select 1 from pg_publication_tables
+                     where pubname = 'supabase_realtime'
+                       and schemaname = 'public' and tablename = 'profiles') then
+    alter publication supabase_realtime add table public.profiles;
+  end if;
+end $$;
+
+
+
+-- ================================================================
+-- m56 合并块:AM 归属直转(am_transfer_direct,免审即时生效)
+-- ================================================================
+drop function if exists public.am_transfer_direct(uuid, uuid, text);
+create or replace function public.am_transfer_direct(p_freelancer uuid, p_to_am uuid, p_reason text default null)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v_me uuid := public.current_am_id();
+begin
+  if v_me is null then raise exception 'Only AMs can transfer.'; end if;
+  if not exists (select 1 from public.profiles
+                 where id = p_freelancer and role = 'user' and managed_by = v_me) then
+    raise exception 'You can only transfer your own freelancers.';
+  end if;
+  if p_to_am = v_me then raise exception 'Target must be a different AM.'; end if;
+  if not exists (select 1 from public.account_managers where id = p_to_am and is_active) then
+    raise exception 'Target AM not found or inactive.';
+  end if;
+
+  -- 守卫旁路(与钱包 RPC 同款):本函数已自证权限,放行 managed_by 改派
+  perform set_config('app.wallet_rpc', '1', true);
+
+  update public.am_transfers
+     set status = 'cancelled', review_note = '被直接转移取代(v85)',
+         decided_by = auth.uid(), decided_at = now()
+   where freelancer_id = p_freelancer and status = 'pending';
+
+  update public.profiles set managed_by = p_to_am where id = p_freelancer;
+
+  insert into public.am_transfers
+    (freelancer_id, from_am, to_am, reason, status, review_note, decided_by, decided_at)
+  values
+    (p_freelancer, v_me, p_to_am, nullif(trim(p_reason), ''),
+     'approved', '直接转移(免审,v85)', auth.uid(), now());
+end $$;
+revoke execute on function public.am_transfer_direct(uuid, uuid, text) from public, anon;
+grant  execute on function public.am_transfer_direct(uuid, uuid, text) to authenticated, service_role;
+
+
 -- 11. 自检输出（跑完看这个结果）
 --     期望：tables = 35，enums = 11，public_policies = 80，storage = 15  (m44 基线)
 --           storage_policies = 21，buckets = 5  (m47)
