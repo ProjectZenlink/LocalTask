@@ -27,7 +27,6 @@ interface PendingSub {
   managed_by: string | null
   doc_kind: 'passport' | 'id' | 'dl' | null
   quality: Record<string, { lap: number; glare: number; minSide: number }> | null
-  mrz: { found: boolean; valid: boolean; mismatches: string[] } | null
 }
 interface DocLink { doc_type: string; path: string; url: string }
 
@@ -85,7 +84,7 @@ export default function AdminKyc() {
   const loadQueue = useCallback(async () => {
     const { data: subs, error: e1 } = await supabase
       .from('kyc_submissions')
-      .select('id, user_id, created_at, kind, doc_kind, quality, mrz')
+      .select('id, user_id, created_at, kind, doc_kind, quality')
       .eq('status', 'pending')
       .order('created_at', { ascending: true })
     if (e1) { setError(e1.message); return }
@@ -117,7 +116,6 @@ export default function AdminKyc() {
         managed_by: (pr as { managed_by?: string | null } | undefined)?.managed_by ?? null,
         doc_kind: (s as { doc_kind?: 'passport' | 'id' | 'dl' | null }).doc_kind ?? null,
         quality: (s as { quality?: Record<string, { lap: number; glare: number; minSide: number }> | null }).quality ?? null,
-        mrz: (s as { mrz?: { found: boolean; valid: boolean; mismatches: string[] } | null }).mrz ?? null,
         ssn_last4: ssns.get(s.user_id)?.ssn_last4 ?? null,
         ssn_full: ssns.get(s.user_id)?.ssn_full ?? null,
         kind: (s as { kind?: 'base' | 'enhanced' }).kind ?? 'base',
@@ -212,13 +210,7 @@ export default function AdminKyc() {
                     {sub.managed_by !== null && amNames[sub.managed_by] && (
                       <span className="rounded-full border border-petrol/40 px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-wider text-petrol">{amNames[sub.managed_by]}</span>
                     )}
-                    {sub.doc_kind === 'passport' && sub.mrz?.valid && (
-                      <span className="rounded-full border border-verified-border bg-verified-bg px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-wider text-verified-text">MRZ Verified</span>
-                    )}
-                    {sub.doc_kind === 'passport' && sub.mrz && !sub.mrz.valid && (
-                      <span className="rounded-full border border-danger-border px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-wider text-danger-text">MRZ Failed · Manual</span>
-                    )}
-                    {sub.doc_kind === 'passport' && !sub.mrz && (
+                    {sub.doc_kind === 'passport' && (
                       <span className="rounded-full border border-verified-border px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-wider text-verified-text">Passport</span>
                     )}
                     {(sub.doc_kind === 'id' || sub.doc_kind === 'dl') && (
@@ -238,11 +230,6 @@ export default function AdminKyc() {
                   <p className="mt-0.5 font-mono text-xs text-faint">
                     {[sub.address, sub.city, sub.state, sub.address_zip].filter(Boolean).join(', ') || '—'}
                   </p>
-                  {sub.mrz && sub.mrz.mismatches.length > 0 && (
-                    <p className="mt-0.5 font-mono text-[10px] uppercase tracking-wider text-pending-text">
-                      MRZ mismatch · {sub.mrz.mismatches.join(' · ')}
-                    </p>
-                  )}
                   {sub.quality && Object.keys(sub.quality).length > 0 && (() => {
                     const qs = Object.values(sub.quality!)
                     const lap = Math.min(...qs.map(q => q.lap))

@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { warmDocScan } from '../lib/docScan'
-import { warmMrz } from '../lib/mrz'
 import { useAuth } from '../context/AuthContext'
 import { Button } from './ui'
 
@@ -57,7 +56,6 @@ export default function ForceWizard() {
     if (localStorage.getItem('lt_admin_lang') === 'zh') localStorage.setItem('lt_admin_lang', 'en')
     // v86:KYC 扫描内核后台预热(仅下载进缓存;省流/2G 自动跳过)
     warmDocScan()
-    warmMrz()
     // v83:AM 过审即时推送 —— 订阅本人 profile 行,免手刷看到下一步
     const ch = supabase.channel(`profile-self-${user.id}`)
       .on('postgres_changes',

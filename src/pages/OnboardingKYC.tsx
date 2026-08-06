@@ -12,7 +12,6 @@ import type { KycDocType } from '../types/database'
 import { PageHeading, Button, Alert, Label, Input } from '../components/ui'
 import DocCapture from '../components/DocCapture'
 import type { DocQuality } from '../lib/docScan'
-import { extractMrzText, parseTD3, compareWithProfile, type MrzResult } from '../lib/mrz'
 
 const MAX_MB = 10
 
@@ -47,7 +46,7 @@ function fail(step: string, e: { message?: string; code?: string } | null): neve
 
 export default function OnboardingKYC() {
   const { user } = useAuth()
-  const { profile, refresh } = useProfile()
+  const { refresh } = useProfile()
   const navigate = useNavigate()
 
   const [docKind, setDocKind] = useState<DocKind | null>(null)
@@ -56,8 +55,6 @@ export default function OnboardingKYC() {
   const [addr, setAddr] = useState<File | null>(null)
   const [addrErr, setAddrErr] = useState<string | null>(null)
   const [ssn, setSsn] = useState('')
-  const [mrz, setMrz] = useState<MrzResult | null>(null)
-  const [mrzBusy, setMrzBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -69,35 +66,7 @@ export default function OnboardingKYC() {
   function pickKind(k: DocKind) {
     setDocKind(k)
     setCaps({})
-    setMrz(null)
     setError(null)
-  }
-
-  /** 批二:护照捕获后即刻端内验真 —— 失败静默降级,绝不拦提交(决策③)。 */
-  async function runMrz(file: File) {
-    setMrzBusy(true); setMrz(null)
-    try {
-      const img = new Image()
-      await new Promise<void>((res, rej) => {
-        img.onload = () => res()
-        img.onerror = () => rej(new Error('img'))
-        img.src = URL.createObjectURL(file)
-      })
-      const c = document.createElement('canvas')
-      c.width = img.naturalWidth; c.height = img.naturalHeight
-      c.getContext('2d')!.drawImage(img, 0, 0)
-      URL.revokeObjectURL(img.src)
-      const text = await extractMrzText(c)
-      const parsed = parseTD3(text)
-      setMrz(compareWithProfile(parsed, {
-        full_name: profile?.full_name ?? null,
-        date_of_birth: profile?.date_of_birth ?? null,
-      }))
-    } catch {
-      setMrz({ found: false, valid: false, fields: null, checks: null, mismatches: [], raw: '' })
-    } finally {
-      setMrzBusy(false)
-    }
   }
 
   function pickAddr(f: File | null) {
@@ -151,7 +120,7 @@ export default function OnboardingKYC() {
 
       const { data: sub, error: subErr } = await supabase
         .from('kyc_submissions')
-        .insert({ user_id: user.id, status: 'pending', doc_kind: docKind, quality, mrz: docKind === 'passport' ? mrz : null })
+        .insert({ user_id: user.id, status: 'pending', doc_kind: docKind, quality })
         .select('id').single()
       if (subErr) fail('kyc_submissions', subErr)
 
@@ -224,33 +193,8 @@ export default function OnboardingKYC() {
         <div className="mb-5 space-y-4">
           {slots.map(s => (
             <DocCapture key={`${docKind}-${s.slot}`} title={s.title} hint={s.hint}
-              onCaptured={(file, q) => {
-                setCaps(prev => ({ ...prev, [s.slot]: { file, q } }))
-                if (docKind === 'passport') void runMrz(file)
-              }} />
+              onCaptured={(file, q) => setCaps(prev => ({ ...prev, [s.slot]: { file, q } }))} />
           ))}
-        </div>
-      )}
-
-      {/* 批二:MRZ 端内验真状态条(不拦提交) */}
-      {docKind === 'passport' && (mrzBusy || mrz) && (
-        <div className="mb-5 rounded-xl border border-hair bg-surface px-4 py-3">
-          {mrzBusy ? (
-            <p className="font-mono text-[11px] uppercase tracking-wider text-faint">Checking passport code…</p>
-          ) : mrz?.valid ? (
-            <>
-              <p className="font-mono text-[11px] uppercase tracking-wider text-verified-text">✓ Passport code verified</p>
-              {mrz.mismatches.length > 0 && (
-                <p className="mt-1 text-xs text-pending-text">
-                  Heads-up: {mrz.mismatches.join(' and ')} on the passport differ from your profile — our team will double-check.
-                </p>
-              )}
-            </>
-          ) : mrz?.found ? (
-            <p className="font-mono text-[11px] uppercase tracking-wider text-pending-text">Passport code check failed — a reviewer will verify manually</p>
-          ) : (
-            <p className="font-mono text-[11px] uppercase tracking-wider text-faint">Passport code not readable — a reviewer will verify manually</p>
-          )}
         </div>
       )}
 

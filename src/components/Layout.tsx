@@ -54,11 +54,7 @@ function LayoutInner({ children }: { children: ReactNode }) {
   const { lang, toggle } = useI18n()
   // v79:FR 界面锁定英文(中文暂屏蔽)
   useEffect(() => {
-    if (profile?.role === 'user') {
-      // v88 加固:上下文与存储双写,杜绝任何会话残留中文(Baozi 实测捕获)
-      if (localStorage.getItem('lt_admin_lang') !== 'en') localStorage.setItem('lt_admin_lang', 'en')
-      if (lang !== 'en') toggle()
-    }
+    if (profile?.role === 'user' && lang !== 'en') toggle()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.role, lang])
   const t = COPY[lang]

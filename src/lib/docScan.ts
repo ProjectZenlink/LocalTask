@@ -1,28 +1,62 @@
-/** 证件扫描内核 v89 —— 引擎换装 scanic(Rust WASM + GPU 变形,~10ms 级,gzip <100KB)。
- *  jscanify + OpenCV.js(15.5MB) 全退役;质检门改纯 JS 实现(几毫秒级)。
- *  · getScanner:scanic Scanner 单例(持久 WASM 实例,webcam 推荐路径)
- *  · warmDocScan:空闲预热(省流/2G 跳过;引擎仅 ~100KB,秒热)
- *  · assessCanvasQuality + evaluateGates:四关质检门(纯 JS)
- *  阈值 GATES 为保守首发值,真机标定后调优(宪法记录)。 */
-import type { Scanner as ScanicScanner } from 'scanic'
+/** 证件扫描内核(v86 KYC Pro 批一)
+ *  · loadOpenCV:OpenCV.js 懒加载(单例 promise,仅在拍摄页触发)
+ *  · warmDocScan:后台预热(只下载进 HTTP 缓存、不执行;省流/2G 自动跳过)
+ *  · assessCanvasQuality + evaluateGates:四关质检门
+ *      ①四角齐(由调用方传入) ②Laplacian 清晰度 ③高光眩光占比 ④最短边分辨率
+ *  阈值 GATES 为首发保守值,待真机标定后调优(宪法记录)。 */
 
-let scannerPromise: Promise<ScanicScanner> | null = null
+const OPENCV_URL = 'https://docs.opencv.org/4.7.0/opencv.js'
 
-/** scanic 扫描器单例:动态导入 + initialize 预编译 WASM。 */
-export function getScanner(): Promise<ScanicScanner> {
-  if (!scannerPromise) {
-    scannerPromise = import('scanic')
-      .then(async m => {
-        const s = new m.Scanner()
-        await s.initialize()
-        return s
-      })
-      .catch(err => { scannerPromise = null; throw err })
-  }
-  return scannerPromise
+// —— OpenCV 全局命名空间(最小类型面) ——
+export interface CvNS {
+  Mat: new () => CvMat
+  imread: (src: HTMLCanvasElement | HTMLImageElement) => CvMat
+  cvtColor: (src: CvMat, dst: CvMat, code: number) => void
+  Laplacian: (src: CvMat, dst: CvMat, ddepth: number) => void
+  meanStdDev: (src: CvMat, mean: CvMat, stddev: CvMat) => void
+  threshold: (src: CvMat, dst: CvMat, thresh: number, maxval: number, type: number) => void
+  countNonZero: (src: CvMat) => number
+  COLOR_RGBA2GRAY: number
+  CV_64F: number
+  THRESH_BINARY: number
+}
+export interface CvMat {
+  delete: () => void
+  doubleAt: (row: number, col: number) => number
+  rows: number
+  cols: number
 }
 
-/** 后台预热:空闲期把引擎装载完毕(仅 ~100KB)。 */
+declare global {
+  interface Window { cv?: Partial<CvNS> & { onRuntimeInitialized?: () => void } }
+}
+
+const cvReady = (): CvNS | null =>
+  window.cv && typeof window.cv.Mat === 'function' ? (window.cv as CvNS) : null
+
+let cvPromise: Promise<CvNS> | null = null
+
+/** 懒加载 OpenCV.js(约 8MB wasm)。重复调用共享同一 promise。 */
+export function loadOpenCV(): Promise<CvNS> {
+  if (cvPromise) return cvPromise
+  cvPromise = new Promise<CvNS>((resolve, reject) => {
+    const tryReady = () => { const cv = cvReady(); if (cv) { resolve(cv); return true } return false }
+    if (tryReady()) return
+    const s = document.createElement('script')
+    s.src = OPENCV_URL
+    s.async = true
+    s.onload = () => {
+      if (tryReady()) return
+      if (window.cv) window.cv.onRuntimeInitialized = () => { tryReady() }
+    }
+    s.onerror = () => { cvPromise = null; reject(new Error('opencv_load_failed')) }
+    document.head.appendChild(s)
+    window.setTimeout(() => reject(new Error('opencv_timeout')), 60_000)
+  })
+  return cvPromise
+}
+
+/** 后台预热:把 wasm 拉进浏览器缓存(不执行,零 CPU)。注册后空闲时调用。 */
 export function warmDocScan(): void {
   try {
     const conn = (navigator as Navigator & {
@@ -30,14 +64,14 @@ export function warmDocScan(): void {
     }).connection
     if (conn?.saveData) return
     if (conn?.effectiveType && /2g/.test(conn.effectiveType)) return
-    const go = () => { void getScanner().catch(() => {}) }
+    const go = () => { void fetch(OPENCV_URL, { cache: 'force-cache', mode: 'no-cors' }).catch(() => {}) }
     const ric = (window as { requestIdleCallback?: (cb: () => void) => void }).requestIdleCallback
     if (ric) ric(go)
     else window.setTimeout(go, 2500)
   } catch { /* 预热失败无碍主流程 */ }
 }
 
-// —— 质检(纯 JS) ——
+// —— 质检 ——
 export interface DocQuality {
   cornersFound: boolean
   lap: number      // Laplacian 方差(越高越锐)
@@ -46,50 +80,31 @@ export interface DocQuality {
 }
 
 export const GATES = {
-  lapMin: 60,      // 保守首发,待真机标定
+  lapMin: 60,      // 首发保守阈值,真机标定后调优
   glareMax: 0.06,
   minSideMin: 900,
 } as const
 
-/** 灰度 + 4 邻域 Laplacian 方差 + 高光占比,在 ≤640 降采样上计算(几毫秒)。 */
-export function assessCanvasQuality(canvas: HTMLCanvasElement, cornersFound: boolean): DocQuality {
-  const minSide = Math.min(canvas.width, canvas.height)
-  const scale = Math.min(1, 640 / Math.max(canvas.width, canvas.height))
-  const w = Math.max(2, Math.round(canvas.width * scale))
-  const h = Math.max(2, Math.round(canvas.height * scale))
-  const work = document.createElement('canvas')
-  work.width = w; work.height = h
-  const ctx = work.getContext('2d')!
-  ctx.drawImage(canvas, 0, 0, w, h)
-  const { data } = ctx.getImageData(0, 0, w, h)
-
-  const gray = new Float32Array(w * h)
-  let glareCount = 0
-  for (let i = 0; i < w * h; i++) {
-    const g = 0.299 * data[i * 4] + 0.587 * data[i * 4 + 1] + 0.114 * data[i * 4 + 2]
-    gray[i] = g
-    if (g >= 245) glareCount++
-  }
-  const glare = glareCount / (w * h)
-
-  // 4 邻域 Laplacian:lap = 4c − 上 − 下 − 左 − 右;取响应方差
-  let sum = 0, sumSq = 0
-  const n = (w - 2) * (h - 2)
-  for (let y = 1; y < h - 1; y++) {
-    for (let x = 1; x < w - 1; x++) {
-      const i = y * w + x
-      const v = 4 * gray[i] - gray[i - 1] - gray[i + 1] - gray[i - w] - gray[i + w]
-      sum += v; sumSq += v * v
-    }
-  }
-  const mean = sum / n
-  const lap = sumSq / n - mean * mean
-
-  return {
-    cornersFound,
-    lap: Math.round(lap * 10) / 10,
-    glare: Math.round(glare * 1000) / 1000,
-    minSide,
+/** 对(已裁平的)画布计算清晰度/眩光/分辨率三指标。 */
+export function assessCanvasQuality(cv: CvNS, canvas: HTMLCanvasElement, cornersFound: boolean): DocQuality {
+  const src = cv.imread(canvas)
+  const gray = new cv.Mat()
+  const lapM = new cv.Mat()
+  const mean = new cv.Mat()
+  const stddev = new cv.Mat()
+  const bin = new cv.Mat()
+  try {
+    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY)
+    cv.Laplacian(gray, lapM, cv.CV_64F)
+    cv.meanStdDev(lapM, mean, stddev)
+    const sd = stddev.doubleAt(0, 0)
+    const lap = sd * sd
+    cv.threshold(gray, bin, 245, 255, cv.THRESH_BINARY)
+    const glare = cv.countNonZero(bin) / (gray.rows * gray.cols)
+    const minSide = Math.min(canvas.width, canvas.height)
+    return { cornersFound, lap: Math.round(lap * 10) / 10, glare: Math.round(glare * 1000) / 1000, minSide }
+  } finally {
+    src.delete(); gray.delete(); lapM.delete(); mean.delete(); stddev.delete(); bin.delete()
   }
 }
 

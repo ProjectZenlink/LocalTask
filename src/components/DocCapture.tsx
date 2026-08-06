@@ -1,12 +1,15 @@
-/** DocCapture v89 —— scanic 引擎版(Rust WASM,~10ms/帧):Onfido 级跟手描线。
- *  流程:Open camera → 实时四角引导(~12fps mint 描线) → Shutter → GPU 透视裁平
- *       → 四关质检门 → 过关预览确认 / 未过关列原因重拍。
- *  相机被拒 → Upload photo 兜底(同一质检门,无旁路)。
- *  产物:onCaptured(file, quality)。 */
+/** DocCapture(v86 KYC Pro 批一) —— Onfido 风格证件采集,全英(FR 面向)。
+ *  流程:Open camera → 实时四角引导(mint 描线) → Shutter → 四角透视裁平
+ *       → 四关质检门(边角/清晰度/眩光/分辨率) → 过关预览确认 / 未过关列原因重拍。
+ *  相机被拒或无摄像头 → Upload photo 兜底(同一质检门,无旁路)。
+ *  产物:onCaptured(file, quality) —— 裁平 JPEG + 指标(随提交入 kyc_submissions.quality)。 */
 import { useEffect, useRef, useState } from 'react'
 import { Button, Alert } from './ui'
-import { getScanner, assessCanvasQuality, evaluateGates, type DocQuality } from '../lib/docScan'
-import type { Scanner as ScanicScanner, CornerPoints } from 'scanic'
+import {
+  loadOpenCV, assessCanvasQuality, evaluateGates,
+  type CvNS, type DocQuality,
+} from '../lib/docScan'
+import type { default as jscanifyType, JscanifyCorners } from 'jscanify/client'
 
 type Phase = 'idle' | 'loading' | 'camera' | 'review' | 'done'
 
@@ -26,9 +29,8 @@ export default function DocCapture({ title, hint, onCaptured }: {
   const streamRef = useRef<MediaStream | null>(null)
   const rafRef = useRef(0)
   const lastTickRef = useRef(0)
-  const busyRef = useRef(false)
-  const scannerRef = useRef<ScanicScanner | null>(null)
-  const workRef = useRef<HTMLCanvasElement | null>(null)
+  const cvRef = useRef<CvNS | null>(null)
+  const scannerRef = useRef<jscanifyType | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => () => { stopStream(); cancelAnimationFrame(rafRef.current) }, [])
@@ -39,19 +41,17 @@ export default function DocCapture({ title, hint, onCaptured }: {
   }
 
   async function ensureEngine() {
-    if (!scannerRef.current) scannerRef.current = await getScanner()
+    if (cvRef.current && scannerRef.current) return
+    const cv = await loadOpenCV()
+    const mod = await import('jscanify/client')
+    cvRef.current = cv
+    scannerRef.current = new mod.default()
   }
 
   async function openCamera() {
     setError(null); setReasons([]); setPhase('loading')
     try {
       await ensureEngine()
-    } catch {
-      setPhase('idle')
-      setError('Scanner engine failed to load — tap Open camera to retry, or use Upload photo.')
-      return
-    }
-    try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
         audio: false,
@@ -66,56 +66,54 @@ export default function DocCapture({ title, hint, onCaptured }: {
       })
     } catch (err) {
       const name = (err as { name?: string } | null)?.name
-      setPhase('idle')
-      setError(name === 'NotAllowedError' || name === 'NotFoundError'
-        ? 'Camera unavailable — you can upload a photo instead.'
-        : 'Camera failed to start — try again or use Upload photo.')
+      if (name === 'NotAllowedError' || name === 'NotFoundError') {
+        setPhase('idle')
+        setError('Camera unavailable — you can upload a photo instead.')
+      } else {
+        setPhase('idle')
+        setError('Scanner failed to start. Check your connection and try again.')
+      }
     }
   }
 
-  /** 取景引导:~12fps 在 480px 降采样帧上找角(scanic ~10ms 级),mint 描线。 */
+  /** 取景引导:约 8fps 在降采样帧上找角,叠加 mint 描线。 */
   function guideLoop(ts: number) {
     rafRef.current = requestAnimationFrame(guideLoop)
-    if (ts - lastTickRef.current < 80 || busyRef.current) return
+    if (ts - lastTickRef.current < 120) return
     lastTickRef.current = ts
-    const v = videoRef.current, ov = overlayRef.current, scanner = scannerRef.current
-    if (!v || !ov || !scanner || v.readyState < 2) return
+    const v = videoRef.current, ov = overlayRef.current
+    const cv = cvRef.current, scanner = scannerRef.current
+    if (!v || !ov || !cv || !scanner || v.readyState < 2) return
     const scale = 480 / v.videoWidth
     const w = 480, h = Math.round(v.videoHeight * scale)
-    let work = workRef.current
-    if (!work || work.width !== w || work.height !== h) {
-      work = document.createElement('canvas')
-      work.width = w; work.height = h
-      workRef.current = work
-    }
+    const work = document.createElement('canvas')
+    work.width = w; work.height = h
     work.getContext('2d')!.drawImage(v, 0, 0, w, h)
-    busyRef.current = true
-    scanner.scan(work, { mode: 'detect', maxProcessingDimension: 480 })
-      .then(res => {
-        const corners = res.success ? res.corners : null
-        drawGuide(ov, v, corners, w, h)
-      })
-      .catch(() => { /* 单帧失败忽略 */ })
-      .finally(() => { busyRef.current = false })
-  }
-
-  function drawGuide(ov: HTMLCanvasElement, v: HTMLVideoElement,
-    corners: CornerPoints | null, srcW: number, srcH: number) {
+    let corners: JscanifyCorners | null = null
+    try {
+      const mat = cv.imread(work)
+      try {
+        const contour = scanner.findPaperContour(mat)
+        if (contour) corners = scanner.getCornerPoints(contour)
+      } finally { (mat as { delete: () => void }).delete() }
+    } catch { corners = null }
     ov.width = v.clientWidth; ov.height = v.clientHeight
     const ctx = ov.getContext('2d')!
     ctx.clearRect(0, 0, ov.width, ov.height)
-    if (!corners) return
-    const sx = ov.width / srcW, sy = ov.height / srcH
-    const pts = [corners.topLeft, corners.topRight, corners.bottomRight, corners.bottomLeft]
-    ctx.strokeStyle = '#6EE7B7'; ctx.lineWidth = 3; ctx.lineJoin = 'round'
-    ctx.beginPath()
-    pts.forEach((p, i) => { const x = p.x * sx, y = p.y * sy; i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y) })
-    ctx.closePath(); ctx.stroke()
-    ctx.fillStyle = '#6EE7B7'
-    pts.forEach(p => { ctx.beginPath(); ctx.arc(p.x * sx, p.y * sy, 5, 0, Math.PI * 2); ctx.fill() })
+    if (corners) {
+      const sx = ov.width / w, sy = ov.height / h
+      const pts = [corners.topLeftCorner, corners.topRightCorner,
+                   corners.bottomRightCorner, corners.bottomLeftCorner]
+      ctx.strokeStyle = '#6EE7B7'; ctx.lineWidth = 3; ctx.lineJoin = 'round'
+      ctx.beginPath()
+      pts.forEach((p, i) => { const x = p.x * sx, y = p.y * sy; i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y) })
+      ctx.closePath(); ctx.stroke()
+      ctx.fillStyle = '#6EE7B7'
+      pts.forEach(p => { ctx.beginPath(); ctx.arc(p.x * sx, p.y * sy, 5, 0, Math.PI * 2); ctx.fill() })
+    }
   }
 
-  /** 快门:全分辨率帧 → scanic GPU 裁平 → 质检门。 */
+  /** 快门:全分辨率帧 → 找角裁平 → 质检门。 */
   function shutter() {
     const v = videoRef.current
     if (!v) return
@@ -131,30 +129,42 @@ export default function DocCapture({ title, hint, onCaptured }: {
     setPhase('loading'); setReasons([])
     try {
       await ensureEngine()
-    } catch {
-      setPhase('idle')
-      setError('Scanner engine failed to load — tap Open camera to retry, or use Upload photo.')
-      return
-    }
-    try {
-      const scanner = scannerRef.current!
-      const res = await scanner.scan(source, {
-        mode: 'extract', output: 'canvas', maxProcessingDimension: 1000,
-      })
-      const ok = res.success && res.output instanceof HTMLCanvasElement
-      const flat: HTMLCanvasElement = ok ? (res.output as HTMLCanvasElement) : source
+      const cv = cvRef.current!, scanner = scannerRef.current!
+      let corners: JscanifyCorners | null = null
+      const mat = cv.imread(source)
+      try {
+        const contour = scanner.findPaperContour(mat)
+        if (contour) corners = scanner.getCornerPoints(contour)
+      } finally { (mat as { delete: () => void }).delete() }
 
-      const q = assessCanvasQuality(flat, ok)
+      let flat: HTMLCanvasElement = source
+      if (corners) {
+        const wTop = Math.hypot(corners.topRightCorner.x - corners.topLeftCorner.x,
+                                corners.topRightCorner.y - corners.topLeftCorner.y)
+        const wBot = Math.hypot(corners.bottomRightCorner.x - corners.bottomLeftCorner.x,
+                                corners.bottomRightCorner.y - corners.bottomLeftCorner.y)
+        const hL = Math.hypot(corners.bottomLeftCorner.x - corners.topLeftCorner.x,
+                              corners.bottomLeftCorner.y - corners.topLeftCorner.y)
+        const hR = Math.hypot(corners.bottomRightCorner.x - corners.topRightCorner.x,
+                              corners.bottomRightCorner.y - corners.topRightCorner.y)
+        const aspect = ((hL + hR) / 2) / Math.max(1, (wTop + wBot) / 2)
+        const outW = Math.min(1600, Math.round(Math.max(wTop, wBot)))
+        const outH = Math.round(outW * aspect)
+        flat = scanner.extractPaper(source, outW, outH, corners)
+      }
+
+      const q = assessCanvasQuality(cv, flat, corners !== null)
       setQuality(q)
       const rs = evaluateGates(q)
       if (rs.length > 0) { setReasons(rs); setPhase('idle'); return }
 
+      const rv = reviewRef.current
       setPhase('review')
       requestAnimationFrame(() => {
-        const rv = reviewRef.current
-        if (!rv) return
-        rv.width = flat.width; rv.height = flat.height
-        rv.getContext('2d')!.drawImage(flat, 0, 0)
+        const rv2 = reviewRef.current ?? rv
+        if (!rv2) return
+        rv2.width = flat.width; rv2.height = flat.height
+        rv2.getContext('2d')!.drawImage(flat, 0, 0)
       })
     } catch {
       setPhase('idle')
@@ -213,7 +223,7 @@ export default function DocCapture({ title, hint, onCaptured }: {
 
       {phase === 'loading' && (
         <p className="mt-3 font-mono text-[11px] uppercase tracking-wider text-faint">
-          Preparing scanner…
+          Preparing scanner… first run may take a moment
         </p>
       )}
 
