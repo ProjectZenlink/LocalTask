@@ -5175,6 +5175,174 @@ alter table public.kyc_submissions add column if not exists quality jsonb;
 alter table public.kyc_submissions add column if not exists mrz jsonb;
 
 
+
+-- ================================================================
+-- m59 合并块:AM 客户运营批(编辑/建号/补传/首登改密)
+-- ================================================================
+alter table public.profiles add column if not exists must_change_password boolean not null default false;
+
+-- ② AM 编辑名下资料(守卫经 app.wallet_rpc='1' 旁路;SSN 可选)
+drop function if exists public.am_update_freelancer_basic(uuid, text, date, text, text, text, text, text);
+create or replace function public.am_update_freelancer_basic(
+  p_freelancer uuid, p_full_name text, p_dob date,
+  p_address text, p_city text, p_state text, p_zip text,
+  p_ssn text default null
+) returns void language plpgsql security definer set search_path = public as $$
+declare
+  v_me uuid := public.current_am_id();
+begin
+  if v_me is null then raise exception 'Only AMs can edit freelancer profiles.'; end if;
+  if not exists (select 1 from public.profiles
+                 where id = p_freelancer and role = 'user' and managed_by = v_me) then
+    raise exception 'You can only edit your own freelancers.';
+  end if;
+  if p_ssn is not null and p_ssn !~ '^\d{9}$' then
+    raise exception 'SSN must be exactly 9 digits.';
+  end if;
+
+  perform set_config('app.wallet_rpc', '1', true);
+
+  update public.profiles
+     set full_name   = nullif(btrim(coalesce(p_full_name, '')), ''),
+         date_of_birth = p_dob,
+         address     = nullif(btrim(coalesce(p_address, '')), ''),
+         city        = nullif(btrim(coalesce(p_city, '')), ''),
+         state       = nullif(btrim(coalesce(p_state, '')), ''),
+         address_zip = nullif(btrim(coalesce(p_zip, '')), '')
+   where id = p_freelancer;
+
+  if p_ssn is not null then
+    insert into public.kyc_ssn (user_id, ssn_full, ssn_last4)
+    values (p_freelancer, p_ssn, right(p_ssn, 4))
+    on conflict (user_id) do update
+      set ssn_full = excluded.ssn_full, ssn_last4 = excluded.ssn_last4;
+  end if;
+end $$;
+revoke execute on function public.am_update_freelancer_basic(uuid, text, date, text, text, text, text, text) from public, anon;
+grant  execute on function public.am_update_freelancer_basic(uuid, text, date, text, text, text, text, text) to authenticated, service_role;
+
+-- ③ 首登改密清旗(本人;旁路防守卫误拦)
+drop function if exists public.confirm_password_changed();
+create or replace function public.confirm_password_changed()
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null then raise exception 'Sign in required.'; end if;
+  perform set_config('app.wallet_rpc', '1', true);
+  update public.profiles set must_change_password = false where id = auth.uid();
+end $$;
+revoke execute on function public.confirm_password_changed() from public, anon;
+grant  execute on function public.confirm_password_changed() to authenticated, service_role;
+
+-- ④ AM 名下补传材料:表策略 + 桶策略
+drop policy if exists p_kyc_doc_am_ins on public.kyc_documents;
+create policy p_kyc_doc_am_ins on public.kyc_documents for insert
+  with check (exists (select 1 from public.profiles p
+                      where p.id = user_id and p.managed_by = public.current_am_id()));
+
+drop policy if exists st_kyc_am_ins on storage.objects;
+create policy st_kyc_am_ins on storage.objects for insert
+  with check (
+    bucket_id = 'kyc-documents'
+    and (storage.foldername(name))[1] in
+        (select id::text from public.profiles where managed_by = public.current_am_id())
+  );
+drop policy if exists st_kyc_am_sel on storage.objects;
+create policy st_kyc_am_sel on storage.objects for select
+  using (
+    bucket_id = 'kyc-documents'
+    and (storage.foldername(name))[1] in
+        (select id::text from public.profiles where managed_by = public.current_am_id())
+  );
+
+-- ⑤ handle_new_user v3(m52 版逐字 + created_by_am 分支)
+create or replace function public.handle_new_user()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  v_role public.user_role := 'user';
+  v_code text;
+  v_ref  uuid;
+  v_lead public.leads%rowtype;
+  v_creator uuid;
+begin
+  -- m42:匿名会话(访客线索)→ 建 lead 档;跳过邮箱域名检查与员工码逻辑
+  if new.email is null or btrim(new.email::text) = '' then
+    insert into public.profiles (id, role)
+    values (new.id, 'lead')
+    on conflict (id) do nothing;
+    return new;
+  end if;
+
+  if not public.email_domain_allowed(new.email::text) then
+    raise exception 'Disposable email domains are not allowed. Please sign up with a real inbox.';
+  end if;
+
+  if coalesce(new.raw_user_meta_data ->> 'staff_code', '') <> '' then
+    select value into v_code from public.app_settings where key = 'staff_invite_code';
+    if v_code is not null and new.raw_user_meta_data ->> 'staff_code' = v_code then
+      v_role := 'pending';
+    end if;
+  end if;
+  insert into public.profiles (id, display_name, role, email)
+  values (new.id, new.raw_user_meta_data ->> 'display_name', v_role, new.email)
+  on conflict (id) do nothing;
+
+  -- m59:AM 建号(老平台迁移)→ 直挂名下 + 首登强制改密 + 不入线索池
+  begin
+    v_creator := nullif(btrim(coalesce(new.raw_user_meta_data ->> 'created_by_am', '')), '')::uuid;
+  exception when others then
+    v_creator := null;
+  end;
+  if v_creator is not null and v_role = 'user'
+     and exists (select 1 from public.account_managers where id = v_creator and is_active) then
+    update public.profiles
+       set managed_by = v_creator,
+           full_name = coalesce(nullif(btrim(coalesce(new.raw_user_meta_data ->> 'full_name', '')), ''), full_name),
+           must_change_password = true
+     where id = new.id;
+    return new;
+  end if;
+
+  -- m42:专属注册链接携带 lead_ref → 线索转化 + 归属绑定(跨设备生效)
+  begin
+    v_ref := nullif(btrim(coalesce(new.raw_user_meta_data ->> 'lead_ref', '')), '')::uuid;
+  exception when others then
+    v_ref := null;
+  end;
+  if v_ref is not null and v_role = 'user' then
+    select * into v_lead from public.leads
+     where ref_token = v_ref and status <> 'converted';
+    if found then
+      update public.leads
+         set status = 'converted', converted_profile = new.id, converted_at = now(),
+             email = coalesce(nullif(btrim(new.email::text), ''), email)  -- m47:注册邮箱回填
+       where id = v_lead.id;
+      if v_lead.assigned_am is not null then
+        update public.profiles set managed_by = v_lead.assigned_am where id = new.id;
+      end if;
+    end if;
+  end if;
+
+  -- m52:自然注册(无邀请码或未命中线索)→ 直接进入线索认领池
+  if v_role = 'user'
+     and not exists (select 1 from public.leads where converted_profile = new.id) then
+    insert into public.leads (full_name, wa_e164, status, source, email,
+                              converted_profile, converted_at)
+    values (coalesce(nullif(btrim(new.raw_user_meta_data ->> 'display_name'), ''),
+                     split_part(new.email::text, '@', 1)),
+            null, 'new', 'signup', new.email::text, new.id, now());
+  end if;
+
+  return new;
+end $$;
+revoke execute on function public.handle_new_user() from public, anon, authenticated;
+
+
+
+-- ================================================================
+-- m60 备考:生产曾漂移出 uq_payout_req_tx_ref 唯一索引(主线从未定义),
+-- m60 已拔除;主脚本无需任何对象变更,本注仅存档防复发。
+-- ================================================================
+
 -- 11. 自检输出（跑完看这个结果）
 --     期望：tables = 35，enums = 11，public_policies = 80，storage = 15  (m44 基线)
 --           storage_policies = 21，buckets = 5  (m47)
