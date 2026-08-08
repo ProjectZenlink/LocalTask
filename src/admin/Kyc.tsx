@@ -25,6 +25,8 @@ interface PendingSub {
   ssn_full: string | null
   kind: 'base' | 'enhanced'
   managed_by: string | null
+  doc_kind: 'passport' | 'id' | 'dl' | null
+  quality: Record<string, { lap: number; glare: number; minSide: number }> | null
 }
 interface DocLink { doc_type: string; path: string; url: string }
 
@@ -82,7 +84,7 @@ export default function AdminKyc() {
   const loadQueue = useCallback(async () => {
     const { data: subs, error: e1 } = await supabase
       .from('kyc_submissions')
-      .select('id, user_id, created_at, kind')
+      .select('id, user_id, created_at, kind, doc_kind, quality')
       .eq('status', 'pending')
       .order('created_at', { ascending: true })
     if (e1) { setError(e1.message); return }
@@ -112,6 +114,8 @@ export default function AdminKyc() {
         state: pr?.state ?? null,
         address_zip: pr?.address_zip ?? null,
         managed_by: (pr as { managed_by?: string | null } | undefined)?.managed_by ?? null,
+        doc_kind: (s as { doc_kind?: 'passport' | 'id' | 'dl' | null }).doc_kind ?? null,
+        quality: (s as { quality?: Record<string, { lap: number; glare: number; minSide: number }> | null }).quality ?? null,
         ssn_last4: ssns.get(s.user_id)?.ssn_last4 ?? null,
         ssn_full: ssns.get(s.user_id)?.ssn_full ?? null,
         kind: (s as { kind?: 'base' | 'enhanced' }).kind ?? 'base',
@@ -206,6 +210,12 @@ export default function AdminKyc() {
                     {sub.managed_by !== null && amNames[sub.managed_by] && (
                       <span className="rounded-full border border-petrol/40 px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-wider text-petrol">{amNames[sub.managed_by]}</span>
                     )}
+                    {sub.doc_kind === 'passport' && (
+                      <span className="rounded-full border border-verified-border px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-wider text-verified-text">Passport</span>
+                    )}
+                    {(sub.doc_kind === 'id' || sub.doc_kind === 'dl') && (
+                      <span className="rounded-full border border-pending-border px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-wider text-pending-text">{sub.doc_kind.toUpperCase()} · Manual</span>
+                    )}
                     {sub.kind === 'enhanced' && (
                       <span className="rounded-full border border-petrol/30 bg-petrol/5 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-petrol">Enhanced</span>
                     )}
@@ -220,6 +230,17 @@ export default function AdminKyc() {
                   <p className="mt-0.5 font-mono text-xs text-faint">
                     {[sub.address, sub.city, sub.state, sub.address_zip].filter(Boolean).join(', ') || '—'}
                   </p>
+                  {sub.quality && Object.keys(sub.quality).length > 0 && (() => {
+                    const qs = Object.values(sub.quality!)
+                    const lap = Math.min(...qs.map(q => q.lap))
+                    const glare = Math.max(...qs.map(q => q.glare))
+                    const px = Math.min(...qs.map(q => q.minSide))
+                    return (
+                      <p className="mt-0.5 font-mono text-[10px] uppercase tracking-wider text-faint">
+                        scan · sharp {lap} · glare {(glare * 100).toFixed(1)}% · {px}px
+                      </p>
+                    )
+                  })()}
                 </div>
                 <div className="flex items-center gap-2">
                   {open === sub.id ? (

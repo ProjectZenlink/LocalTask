@@ -25,18 +25,6 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => { setLoading(true); void refresh() }, [refresh])
 
-  // v85.1:订阅本人 profile 行 —— KYC/奖励状态被后台改动时全站即时校正(m55 发布位)
-  useEffect(() => {
-    if (!user) return
-    const ch = supabase.channel(`profile-ctx-${user.id}`)
-      .on('postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=eq.${user.id}` },
-        () => { void refresh() })
-      .subscribe()
-    return () => { void supabase.removeChannel(ch) }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id])
-
   return <ProfileContext.Provider value={{ profile, loading, refresh }}>{children}</ProfileContext.Provider>
 }
 

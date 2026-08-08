@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { warmDocScan } from '../lib/docScan'
 import { useAuth } from '../context/AuthContext'
 import { Button } from './ui'
 
@@ -53,7 +54,8 @@ export default function ForceWizard() {
     pull()
     // v84.4:FR 语言存储强制归 en(中文下架双保险)
     if (localStorage.getItem('lt_admin_lang') === 'zh') localStorage.setItem('lt_admin_lang', 'en')
-    if (localStorage.getItem('lt_lang') === 'zh') localStorage.setItem('lt_lang', 'en')  // v85.1:FR 真键补锁
+    // v86:KYC 扫描内核后台预热(仅下载进缓存;省流/2G 自动跳过)
+    warmDocScan()
     // v83:AM 过审即时推送 —— 订阅本人 profile 行,免手刷看到下一步
     const ch = supabase.channel(`profile-self-${user.id}`)
       .on('postgres_changes',
