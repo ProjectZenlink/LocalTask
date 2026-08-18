@@ -72,7 +72,6 @@ export interface Profile {
   signup_bonus_state: BonusState
   bonus_tx_ref: string | null
   bonus_paid_at: string | null
-  must_change_password?: boolean
 }
 
 export interface AccountManager {

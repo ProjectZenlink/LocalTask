@@ -1,4 +1,4 @@
-import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { Link, NavLink, useNavigate } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import { ListChecks, Wallet, UserRound, MessageSquare } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
@@ -33,14 +33,6 @@ function LayoutInner({ children }: { children: ReactNode }) {
   const { session } = useAuth()
   const { profile } = useProfile()
   const navigate = useNavigate()
-  const { pathname } = useLocation()
-
-  // v85.3:AM 建号首登 → 强制改密页(统一初始密码一次性作废)
-  useEffect(() => {
-    if (profile?.must_change_password && !pathname.startsWith('/change-password')) {
-      navigate('/change-password')
-    }
-  }, [profile?.must_change_password, pathname, navigate])
   const isAdmin = profile?.role === 'admin'
   const isAm = profile?.role === 'am'
   const unread = useUnread(!!session && !isAdmin && !isAm && !!profile && profile.role === 'user')
@@ -62,12 +54,7 @@ function LayoutInner({ children }: { children: ReactNode }) {
   const { lang, toggle } = useI18n()
   // v79:FR 界面锁定英文(中文暂屏蔽)
   useEffect(() => {
-    if (profile?.role === 'user') {
-      // v88 加固:上下文与存储双写,杜绝任何会话残留中文(Baozi 实测捕获)
-      if (localStorage.getItem('lt_admin_lang') !== 'en') localStorage.setItem('lt_admin_lang', 'en')
-      if (localStorage.getItem('lt_lang') !== 'en') localStorage.setItem('lt_lang', 'en')  // v85.1:FR 端 i18n 真键补锁(体检落网)
-      if (lang !== 'en') toggle()
-    }
+    if (profile?.role === 'user' && lang !== 'en') toggle()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.role, lang])
   const t = COPY[lang]

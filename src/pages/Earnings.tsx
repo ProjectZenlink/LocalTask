@@ -177,11 +177,7 @@ export default function Wallet() {
     setReqBusy(true); setErr(null)
     const { error: e } = await supabase.rpc('request_wallet_payout')
     setReqBusy(false)
-    if (e) {
-      setErr(e.message)
-      await loadAll()  // v85.1:出错也刷新 —— 旧快照当场校正,金额与真相对齐
-      return
-    }
+    if (e) { setErr(e.message); return }
     await loadAll()
   }
 

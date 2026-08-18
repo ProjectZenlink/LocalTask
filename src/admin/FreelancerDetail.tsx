@@ -26,7 +26,7 @@ type Signed = { path: string; url: string }
 const COPY = {
   zh: {
     back: '← 人才库', notFound: '未找到该 freelancer',
-    basics: '基本资料', edit: '编辑', save: '保存', cancel: '取消', editOk: '已保存', ssnPh: '9 位数字,留空则不改', addDoc: '补传', upOk: '已补传,重新展开可见', dt_id_front: '证件正面', dt_id_back: '证件背面', dt_addr: '地址证明', dt_selfie: '手持自拍', legal: '法定姓名', regEmail: '注册邮箱', dob: '出生日期', addr: '地址', ssn: 'SSN', only4: '仅后四位', joined: '注册',
+    basics: '基本资料', legal: '法定姓名', regEmail: '注册邮箱', dob: '出生日期', addr: '地址', ssn: 'SSN', only4: '仅后四位', joined: '注册',
     workT: '工作邮箱', workEmail: '邮箱地址', workPwd: '邮箱密码', workHint: '由 AM 注册并维护;freelancer 端只读展示。', workSave: '保存', workSaved: '已保存 ✓',
     enhKyc: 'Enhanced KYC', bonusT: '注册奖励', bonusState: '状态', streakT: '签到奖励', streakEmpty: '还没有解锁任何签到奖励。',
     pcrT: '待审的资料修改', pcrOld: '现值', pcrNew: '申请值', pcrApprove: '批准', pcrRejectBtn: '驳回', pcrRejectQ: '驳回备注(可选):',
@@ -55,7 +55,7 @@ const COPY = {
   },
   en: {
     back: '← Pool', notFound: 'Freelancer not found',
-    basics: 'Basics', edit: 'Edit', save: 'Save', cancel: 'Cancel', editOk: 'Saved', ssnPh: '9 digits, blank = keep', addDoc: 'Add file', upOk: 'Uploaded — reopen to view', dt_id_front: 'ID front', dt_id_back: 'ID back', dt_addr: 'Address proof', dt_selfie: 'Handheld selfie', legal: 'Legal name', regEmail: 'Account email', dob: 'Date of birth', addr: 'Address', ssn: 'SSN', only4: 'last 4 only', joined: 'Joined',
+    basics: 'Basics', legal: 'Legal name', regEmail: 'Account email', dob: 'Date of birth', addr: 'Address', ssn: 'SSN', only4: 'last 4 only', joined: 'Joined',
     workT: 'Work email', workEmail: 'Email address', workPwd: 'Email password', workHint: 'Registered and managed by the AM; read-only on the freelancer side.', workSave: 'Save', workSaved: 'Saved ✓',
     enhKyc: 'Enhanced KYC', bonusT: 'Signup bonus', bonusState: 'State', streakT: 'Streak rewards', streakEmpty: 'No streak rewards unlocked yet.',
     pcrT: 'Pending profile change', pcrOld: 'Current', pcrNew: 'Requested', pcrApprove: 'Approve', pcrRejectBtn: 'Reject', pcrRejectQ: 'Rejection note (optional):',
@@ -226,69 +226,6 @@ export default function FreelancerDetail({ amScope = null }: { amScope?: Account
   // 懒加载:KYC / 公司文件都在展开时才批量签名
   const [openSubId, setOpenSubId] = useState<string | null>(null)
   const [subDocs, setSubDocs] = useState<Record<string, Signed[] | 'loading'>>({})
-  const [editing, setEditing] = useState(false)
-  const [eForm, setEForm] = useState({ name: '', dob: '', addr: '', city: '', state: '', zip: '', ssn: '' })
-  const [eBusy, setEBusy] = useState(false)
-  const [eErr, setEErr] = useState<string | null>(null)
-  const [eOk, setEOk] = useState(false)
-  const [upFor, setUpFor] = useState<string | null>(null)
-  const [upType, setUpType] = useState<'id_front' | 'id_back' | 'address_proof' | 'selfie_handheld'>('id_front')
-  const [upBusy, setUpBusy] = useState(false)
-  const [upMsg, setUpMsg] = useState<string | null>(null)
-
-  function startEdit() {
-    if (!p) return
-    setEForm({
-      name: p.full_name ?? '', dob: p.date_of_birth ?? '',
-      addr: p.address ?? '', city: p.city ?? '', state: p.state ?? '', zip: p.address_zip ?? '',
-      ssn: '',
-    })
-    setEErr(null); setEOk(false); setEditing(true)
-  }
-
-  async function saveEdit() {
-    if (!p) return
-    if (eForm.ssn && !/^\d{9}$/.test(eForm.ssn)) { setEErr(t.ssnPh); return }
-    setEBusy(true); setEErr(null)
-    const { error: e } = await supabase.rpc('am_update_freelancer_basic', {
-      p_freelancer: p.id,
-      p_full_name: eForm.name.trim() || null,
-      p_dob: eForm.dob || null,
-      p_address: eForm.addr.trim() || null,
-      p_city: eForm.city.trim() || null,
-      p_state: eForm.state.trim() || null,
-      p_zip: eForm.zip.trim() || null,
-      p_ssn: eForm.ssn || null,
-    })
-    setEBusy(false)
-    if (e) { setEErr(e.message); return }
-    setP({ ...p, full_name: eForm.name.trim() || null, date_of_birth: eForm.dob || null,
-      address: eForm.addr.trim() || null, city: eForm.city.trim() || null,
-      state: eForm.state.trim() || null, address_zip: eForm.zip.trim() || null })
-    if (eForm.ssn) { setSsnFull(eForm.ssn); setSsn4(eForm.ssn.slice(5)) }
-    setEditing(false); setEOk(true)
-  }
-
-  async function amUpload(subId: string, f: File | null) {
-    if (!f || !p) return
-    setUpBusy(true); setUpMsg(null)
-    try {
-      const ext = f.name.split('.').pop() || 'jpg'
-      const path = `${p.id}/${upType}-am-${Date.now()}.${ext}`
-      const { error: se } = await supabase.storage.from('kyc-documents')
-        .upload(path, f, { upsert: true })
-      if (se) throw new Error(se.message)
-      const { error: de } = await supabase.from('kyc_documents')
-        .insert({ user_id: p.id, submission_id: subId, doc_type: upType, storage_path: path })
-      if (de) throw new Error(de.message)
-      setSubDocs(prev => { const n = { ...prev }; delete n[subId]; return n })
-      setUpMsg(t.upOk); setUpFor(null)
-    } catch (err) {
-      setUpMsg(err instanceof Error ? err.message : 'Upload failed')
-    } finally {
-      setUpBusy(false)
-    }
-  }
   const [openCoId, setOpenCoId] = useState<string | null>(null)
   const [coDocs, setCoDocs] = useState<Record<string, Signed[] | 'loading'>>({})
 
@@ -504,35 +441,7 @@ export default function FreelancerDetail({ amScope = null }: { amScope?: Account
       {error && <Alert tone="error">{error}</Alert>}
 
       <Card className="mb-5 p-5">
-        <div className="flex items-center justify-between">
-          <SectionTitle>{t.basics}</SectionTitle>
-          {amScope && !editing && (
-            <button onClick={startEdit}
-              className="font-mono text-[11px] uppercase tracking-wider text-petrol transition hover:text-petrol-hover">
-              {t.edit}
-            </button>
-          )}
-          {eOk && !editing && <span className="font-mono text-[10px] uppercase tracking-wider text-verified-text">{t.editOk}</span>}
-        </div>
-        {editing ? (
-          <div className="space-y-3 py-2">
-            {eErr && <Alert tone="error">{eErr}</Alert>}
-            <div><Label>{t.legal}</Label><Input value={eForm.name} onChange={e => setEForm(f => ({ ...f, name: e.target.value }))} /></div>
-            <div><Label>{t.dob}</Label><Input type="date" value={eForm.dob} onChange={e => setEForm(f => ({ ...f, dob: e.target.value }))} /></div>
-            <div><Label>{t.addr}</Label><Input value={eForm.addr} onChange={e => setEForm(f => ({ ...f, addr: e.target.value }))} /></div>
-            <div className="grid grid-cols-3 gap-2">
-              <Input placeholder="City" value={eForm.city} onChange={e => setEForm(f => ({ ...f, city: e.target.value }))} />
-              <Input placeholder="State" value={eForm.state} onChange={e => setEForm(f => ({ ...f, state: e.target.value }))} />
-              <Input placeholder="ZIP" value={eForm.zip} onChange={e => setEForm(f => ({ ...f, zip: e.target.value }))} />
-            </div>
-            <div><Label>{t.ssn}</Label><Input inputMode="numeric" maxLength={9} placeholder={t.ssnPh} className="font-mono"
-              value={eForm.ssn} onChange={e => setEForm(f => ({ ...f, ssn: e.target.value.replace(/\D/g, '').slice(0, 9) }))} /></div>
-            <div className="flex gap-2">
-              <Button className="px-4 py-2 text-sm" disabled={eBusy} onClick={() => void saveEdit()}>{eBusy ? '…' : t.save}</Button>
-              <Button variant="ghost" className="px-4 py-2 text-sm" onClick={() => setEditing(false)}>{t.cancel}</Button>
-            </div>
-          </div>
-        ) : (<>
+        <SectionTitle>{t.basics}</SectionTitle>
         <KV k={t.legal}>{p.full_name ?? '—'}</KV>
         <KV k={t.dob}>{p.date_of_birth ?? '—'}</KV>
         <KV k={t.addr}>{addrLine}</KV>
@@ -553,7 +462,6 @@ export default function FreelancerDetail({ amScope = null }: { amScope?: Account
           <StatusBadge status={p.enhanced_kyc_status === 'verified' ? 'verified' : p.enhanced_kyc_status === 'pending' ? 'pending' : 'unverified'} label={p.enhanced_kyc_status} />
         </KV>
         <KV k={t.joined}>{dateShort(p.created_at)}</KV>
-        </>)}
         <KV k={t.owner}>
           {amScope ? (
             <span className="inline-flex items-center gap-3">
@@ -831,38 +739,11 @@ export default function FreelancerDetail({ amScope = null }: { amScope?: Account
                 {t.submitted} {dateTimeShort(s.created_at)} · {s.status}
                 {s.reviewed_at && <> · {t.reviewed} {dateShort(s.reviewed_at)}</>}
               </p>
-              <span className="flex items-center gap-2">
-                {amScope && (
-                  <Button variant="ghost" className="px-3 py-1.5 text-xs"
-                    onClick={() => { setUpFor(v => v === s.id ? null : s.id); setUpMsg(null) }}>
-                    {t.addDoc}
-                  </Button>
-                )}
-                <Button variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => void toggleSub(s.id)}>
-                  {openSubId === s.id ? t.hideDocs : t.viewKyc}
-                </Button>
-              </span>
+              <Button variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => void toggleSub(s.id)}>
+                {openSubId === s.id ? t.hideDocs : t.viewKyc}
+              </Button>
             </div>
             {s.rejection_reason && <p className="mt-1 text-sm text-danger-text">{t.reason} {s.rejection_reason}</p>}
-            {upFor === s.id && (
-              <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-hair bg-surface px-3 py-2">
-                <select value={upType} onChange={e => setUpType(e.target.value as typeof upType)}
-                  className="rounded-lg border border-hair bg-white px-2 py-1.5 text-xs">
-                  <option value="id_front">{t.dt_id_front}</option>
-                  <option value="id_back">{t.dt_id_back}</option>
-                  <option value="address_proof">{t.dt_addr}</option>
-                  <option value="selfie_handheld">{t.dt_selfie}</option>
-                </select>
-                <input id={`amup-${s.id}`} type="file" accept="image/*,application/pdf" className="hidden"
-                  onChange={e => void amUpload(s.id, e.target.files?.[0] ?? null)} />
-                <label htmlFor={`amup-${s.id}`}
-                  className="inline-flex cursor-pointer items-center rounded-lg border border-hair bg-white px-3 py-1.5 font-display text-xs text-ink transition hover:bg-paper">
-                  {upBusy ? '…' : t.addDoc}
-                </label>
-              </div>
-            )}
-            {upMsg && upFor === null && openSubId !== s.id && null}
-            {upMsg && <p className="mt-1 font-mono text-[10px] uppercase tracking-wider text-verified-text">{upMsg}</p>}
             {openSubId === s.id && (
               subDocs[s.id] === 'loading' || !subDocs[s.id]
                 ? <p className="mt-3 text-sm text-faint">{t.loadingDocs}</p>

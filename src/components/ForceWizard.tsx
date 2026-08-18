@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { warmDocScan } from '../lib/docScan'
 import { useAuth } from '../context/AuthContext'
 import { Button } from './ui'
 
@@ -46,14 +47,15 @@ export default function ForceWizard() {
     let alive = true
     const pull = () => {
       void supabase.from('profiles')
-        .select('role, kyc_status, enhanced_kyc_status, payout_address, payout_paypal_email, must_change_password')
+        .select('role, kyc_status, enhanced_kyc_status, payout_address, payout_paypal_email')
         .eq('id', user.id).maybeSingle()
         .then(({ data }) => { if (alive) setSnap((data as Snap | null) ?? null) })
     }
     pull()
     // v84.4:FR 语言存储强制归 en(中文下架双保险)
     if (localStorage.getItem('lt_admin_lang') === 'zh') localStorage.setItem('lt_admin_lang', 'en')
-    if (localStorage.getItem('lt_lang') === 'zh') localStorage.setItem('lt_lang', 'en')  // v85.1:FR 真键补锁
+    // v86:KYC 扫描内核后台预热(仅下载进缓存;省流/2G 自动跳过)
+    warmDocScan()
     // v83:AM 过审即时推送 —— 订阅本人 profile 行,免手刷看到下一步
     const ch = supabase.channel(`profile-self-${user.id}`)
       .on('postgres_changes',
@@ -72,7 +74,6 @@ export default function ForceWizard() {
   }, [user, pathname])
 
   if (!user || !snap || snap.role !== 'user') return null
-  if ((snap as { must_change_password?: boolean }).must_change_password) return null
   if (snap.kyc_status !== 'verified') return null
 
   const hasPayout = !!(snap.payout_address?.trim() || snap.payout_paypal_email?.trim())

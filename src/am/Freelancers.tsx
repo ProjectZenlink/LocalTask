@@ -3,21 +3,21 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { bjDay } from '../lib/format'
 import type { PoolRow } from '../types/database'
-import { Alert, Button, Card, Input, Label, PageHeading, StatusBadge } from '../components/ui'
+import { PageHeading, Card, Alert, Button, StatusBadge, Input } from '../components/ui'
 import { useLang } from '../admin/i18n'
 import { useAm } from './AmLayout'
 import { pingWorkline } from '../lib/workline'
 
 const COPY = {
   zh: {
-    title: '我的 Freelancer', sub: '你名下的人才:负载与签到一览。三个入口:清单验收、完整档案、直接派任务。', createBtn: '+ 创建 Freelancer', cTitle: '创建 Freelancer', cEmail: '邮箱', cName: '法定姓名', cGo: '创建', cOkA: '已创建并挂入你名下。', cOkB: '初始密码 = 公司统一初始密码;请引导客户尽快首次登录(系统将强制其改密)。', cClose: '关闭',
+    title: '我的 Freelancer', sub: '你名下的人才:负载与签到一览。三个入口:清单验收、完整档案、直接派任务。',
     empty: '名下还没有人。去', poolLink: '人才库', empty2: '认领无归属的 freelancer。',
     chat: '对话', board: '清单', profile: '档案', assign: '派任务', search: '按名字/联系方式搜索…', ciNone: '今日未签到', ciPending: '确认签到', ciDone: '签到已复核 ✓',
     active: '活跃', done: '完成', suspended: '已暂停',
     fAll: '全部', fCi: '今日签到待确认', fKycPending: 'KYC 待审核', fKycDone: 'KYC 已完成', noMatch: '没有匹配的人。',
   },
   en: {
-    title: 'My freelancers', sub: 'Your roster with load and check-ins at a glance. Three doors: checklist, full profile, assign a task.', createBtn: '+ Create freelancer', cTitle: 'Create freelancer', cEmail: 'Email', cName: 'Legal full name', cGo: 'Create', cOkA: 'Created and assigned to you.', cOkB: 'Starter password = the company shared password; ask the client to log in soon (a password change is enforced).', cClose: 'Close',
+    title: 'My freelancers', sub: 'Your roster with load and check-ins at a glance. Three doors: checklist, full profile, assign a task.',
     empty: 'Nobody yet. Claim unowned freelancers in the', poolLink: 'Pool', empty2: '.',
     chat: 'Chat', board: 'Checklist', profile: 'Profile', assign: 'Assign task', search: 'Search by name / contact…', ciNone: 'No check-in today', ciPending: 'Confirm check-in', ciDone: 'Check-in confirmed ✓',
     active: 'active', done: 'done', suspended: 'Paused',
@@ -52,25 +52,6 @@ export default function AmFreelancers() {
   const [rows, setRows] = useState<PoolRow[]>([])
   const [q, setQ] = useState('')
   const [ff, setFf] = useState<'all' | 'ci' | 'kyc_pending' | 'kyc_done'>('all')
-  const [cOpen, setCOpen] = useState(false)
-  const [cEmail, setCEmail] = useState('')
-  const [cName, setCName] = useState('')
-  const [cBusy, setCBusy] = useState(false)
-  const [cErr, setCErr] = useState<string | null>(null)
-  const [cMsg, setCMsg] = useState<string | null>(null)
-
-  async function createFl() {
-    if (!cEmail.trim() || cName.trim().length < 2) { setCErr(t.cEmail + ' / ' + t.cName); return }
-    setCBusy(true); setCErr(null)
-    const { data, error } = await supabase.functions.invoke('am-create-freelancer', {
-      body: { email: cEmail.trim(), full_name: cName.trim() },
-    })
-    setCBusy(false)
-    const errMsg = (data as { error?: string } | null)?.error ?? error?.message
-    if (errMsg) { setCErr(errMsg); return }
-    setCMsg(t.cOkA); setCEmail(''); setCName('')
-    void load()
-  }
   const [ci, setCi] = useState<Record<string, 'pending' | 'confirmed'>>({})
   const [ciBusy, setCiBusy] = useState<string | null>(null)
   const bjToday = bjDay()
@@ -144,10 +125,7 @@ export default function AmFreelancers() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <PageHeading sub={t.sub}>{t.title}</PageHeading>
-        <Button className="px-4 py-2 text-sm" onClick={() => { setCOpen(true); setCMsg(null); setCErr(null) }}>{t.createBtn}</Button>
-      </div>
+      <PageHeading sub={t.sub}>{t.title}</PageHeading>
       <div className="mb-3">
         <Input value={q} onChange={e => setQ(e.target.value)} placeholder={t.search} />
       </div>
@@ -203,30 +181,6 @@ export default function AmFreelancers() {
           </div>
         ))}
       </Card>
-
-      {cOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4" onClick={() => setCOpen(false)}>
-          <div className="w-full max-w-sm rounded-2xl border border-hair bg-white p-5" onClick={e => e.stopPropagation()}>
-            <p className="font-display text-lg text-ink">{t.cTitle}</p>
-            {cErr && <Alert tone="error">{cErr}</Alert>}
-            {cMsg ? (
-              <>
-                <p className="mt-3 text-sm text-verified-text">{cMsg}</p>
-                <p className="mt-1 text-xs leading-relaxed text-muted">{t.cOkB}</p>
-                <Button variant="ghost" className="mt-4 w-full" onClick={() => setCOpen(false)}>{t.cClose}</Button>
-              </>
-            ) : (
-              <>
-                <div className="mt-3 space-y-3">
-                  <div><Label>{t.cEmail}</Label><Input type="email" value={cEmail} onChange={e => setCEmail(e.target.value)} /></div>
-                  <div><Label>{t.cName}</Label><Input value={cName} onChange={e => setCName(e.target.value)} /></div>
-                </div>
-                <Button className="mt-4 w-full" disabled={cBusy} onClick={() => void createFl()}>{cBusy ? '…' : t.cGo}</Button>
-              </>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   )
 }

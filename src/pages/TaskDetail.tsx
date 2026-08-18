@@ -291,18 +291,10 @@ export default function TaskDetail() {
           <div className="mb-4">
             <Label>{t.filesLabel}</Label>
             <input
-              id="task-files-input"
               type="file" multiple
               onChange={e => setFiles(Array.from(e.target.files ?? []))}
-              className="hidden"
+              className="block w-full text-sm text-muted file:mr-3 file:rounded-lg file:border file:border-hair file:bg-surface file:px-3 file:py-2 file:font-display file:text-sm file:text-ink hover:file:bg-paper"
             />
-            <label htmlFor="task-files-input"
-              className="inline-flex cursor-pointer items-center rounded-lg border border-hair bg-surface px-3 py-2 font-display text-sm text-ink transition hover:bg-paper">
-              Choose files
-            </label>
-            {files.length === 0 && (
-              <span className="ml-3 align-middle font-mono text-xs text-muted">No files selected</span>
-            )}
             {files.length > 0 && (
               <p className="mt-1.5 font-mono text-xs text-verified-text">{files.map(f => f.name).join(' · ')}</p>
             )}

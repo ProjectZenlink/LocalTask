@@ -325,16 +325,7 @@ export default function LeadChat({
             </button>
             <EmojiPicker onPick={e => setDraft(d => d + e)} />
           </div>
-          <textarea value={draft} onChange={e => setDraft(e.target.value)} rows={1} placeholder={t.placeholder} onPaste={e => {
-              const items = e.clipboardData?.items
-              if (!items) return
-              for (const it of items) {
-                if (it.type.startsWith('image/')) {
-                  const f = it.getAsFile()
-                  if (f) { e.preventDefault(); pickFile(f); break }
-                }
-              }
-            }}
+          <textarea value={draft} onChange={e => setDraft(e.target.value)} rows={1} placeholder={t.placeholder}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send() } }}
             className="max-h-32 min-h-[2.6rem] flex-1 resize-none rounded-2xl border border-hair bg-white px-4 py-2.5 text-sm text-ink outline-none transition focus:border-petrol/50 focus:ring-2 focus:ring-petrol/10" />
           <button onClick={() => void send()} disabled={busy || (!draft.trim() && !pending)} title={t.send}

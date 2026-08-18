@@ -49,7 +49,6 @@ import TaskDetail from './pages/TaskDetail'
 import Earnings from './pages/Earnings'
 import Profile from './pages/Profile'
 import EnhancedKyc from './pages/EnhancedKyc'
-import ChangePassword from './pages/ChangePassword'
 
 function Shell() {
   return (
@@ -136,7 +135,6 @@ export default function App() {
         <Route path="/tasks/:id" element={<ProtectedRoute freelancerOnly requireOnboarded><TaskDetail /></ProtectedRoute>} />
         <Route path="/earnings" element={<ProtectedRoute freelancerOnly requireOnboarded><Earnings /></ProtectedRoute>} />
         <Route path="/enhanced-kyc" element={<ProtectedRoute freelancerOnly requireOnboarded><EnhancedKyc /></ProtectedRoute>} />
-        <Route path="/change-password" element={<ProtectedRoute><ChangePassword /></ProtectedRoute>} />
         <Route path="/me" element={<ProtectedRoute freelancerOnly requireOnboarded><Profile /></ProtectedRoute>} />
         <Route path="/messages" element={<ProtectedRoute freelancerOnly requireOnboarded><FreelancerMessages /></ProtectedRoute>} />
 
