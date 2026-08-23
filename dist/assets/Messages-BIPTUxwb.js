@@ -1,1 +1,0 @@
-import{j as r}from"./index-C5KxkCgh.js";import{C as t}from"./ChatCenter-BhNxL7CB.js";import"./AttachmentView--z9h4xW5.js";import"./leads-DfKu4EVS.js";import"./site-CnuDnM3A.js";import"./eye-DB04Yoth.js";import"./errors-BDg7rGeD.js";function n(){return r.jsx(t,{lang:"en",myRole:"user"})}export{n as default};
