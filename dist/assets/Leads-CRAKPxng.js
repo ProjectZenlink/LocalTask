@@ -1,0 +1,1 @@
+import{j as r}from"./index-C5KxkCgh.js";import{L as t}from"./LeadsDesk-1hofQETR.js";import"./i18n-DwZ_q6co.js";import"./workline-DdRv8tK2.js";import"./site-CnuDnM3A.js";import"./leads-DfKu4EVS.js";import"./errors-BDg7rGeD.js";function n(){return r.jsx(t,{isAdmin:!0,amId:null})}export{n as default};
