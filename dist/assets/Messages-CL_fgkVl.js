@@ -1,0 +1,1 @@
+import{j as r}from"./index-Bm_bee-E.js";import{C as e}from"./ChatCenter-D39HuWpO.js";import"./site-CnuDnM3A.js";import"./eye-DjNdknzT.js";import"./errors-BDg7rGeD.js";function n(){return r.jsx(e,{lang:"en",myRole:"user"})}export{n as default};

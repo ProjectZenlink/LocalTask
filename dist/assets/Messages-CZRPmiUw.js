@@ -1,0 +1,1 @@
+import{j as o}from"./index-Bm_bee-E.js";import{C as r}from"./ChatCenter-D39HuWpO.js";import{u as m}from"./i18n-yH4iEoIG.js";import"./site-CnuDnM3A.js";import"./eye-DjNdknzT.js";import"./errors-BDg7rGeD.js";function u(){const{lang:t}=m();return o.jsx(r,{lang:t,myRole:"am"})}export{u as default};

@@ -7,6 +7,7 @@ import { Alert, Button, Card, Input, Label, PageHeading, StatusBadge } from '../
 import { useLang } from '../admin/i18n'
 import { useAm } from './AmLayout'
 import { pingWorkline } from '../lib/workline'
+import { SITE_URL } from '../lib/site'
 import { friendly } from '../lib/errors'
 
 const COPY = {
@@ -16,6 +17,9 @@ const COPY = {
     chat: '对话', board: '清单', profile: '档案', assign: '派任务', search: '按名字/联系方式搜索…', ciNone: '今日未签到', ciPending: '确认签到', ciDone: '签到已复核 ✓',
     reg: '注册', active: '活跃', done: '完成', suspended: '已暂停',
     fAll: '全部', fCi: '今日签到待确认', fKycPending: 'KYC 待审核', fKycDone: 'KYC 已完成', noMatch: '没有匹配的人。',
+    invT: '邀请注册', invNote: '备注', invGen: '生成链接', invBusyTxt: '生成中…',
+    invLink: '把这个链接发给对方:', invCopy: '复制', invCopied: '已复制 ✓',
+    invHist: '已生成的邀请', invEmpty: '还没有生成过邀请。', invPending: '待注册', invDoneChip: '已加入',
   },
   en: {
     title: 'My freelancers', sub: 'Your roster with load and check-ins at a glance. Three doors: checklist, full profile, assign a task.', createBtn: '+ Create freelancer', cTitle: 'Create freelancer', cEmail: 'Email', cName: 'Legal full name', cGo: 'Create', cOkA: 'Created and assigned to you.', cOkB: 'Starter password = the company shared password; ask the client to log in soon (a password change is enforced).', cClose: 'Close',
@@ -23,6 +27,9 @@ const COPY = {
     chat: 'Chat', board: 'Checklist', profile: 'Profile', assign: 'Assign task', search: 'Search by name / contact…', ciNone: 'No check-in today', ciPending: 'Confirm check-in', ciDone: 'Check-in confirmed ✓',
     reg: 'Joined', active: 'active', done: 'done', suspended: 'Paused',
     fAll: 'All', fCi: 'Check-ins to confirm', fKycPending: 'KYC pending', fKycDone: 'KYC verified', noMatch: 'No one matches.',
+    invT: 'Invite to sign up', invNote: 'Note', invGen: 'Generate link', invBusyTxt: 'Generating…',
+    invLink: 'Send this link to them:', invCopy: 'Copy', invCopied: 'Copied ✓',
+    invHist: 'Invites sent', invEmpty: 'No invites yet.', invPending: 'Awaiting signup', invDoneChip: 'Joined',
   },
 }
 
@@ -59,6 +66,51 @@ export default function AmFreelancers() {
   const [cBusy, setCBusy] = useState(false)
   const [cErr, setCErr] = useState<string | null>(null)
   const [cMsg, setCMsg] = useState<string | null>(null)
+  const [histOpen, setHistOpen] = useState(false)
+  const [invNote, setInvNote] = useState('')
+  const [invBusy, setInvBusy] = useState(false)
+  const [invErr, setInvErr] = useState<string | null>(null)
+  const [invLink, setInvLink] = useState<string | null>(null)
+  const [invites, setInvites] = useState<{ id: string; full_name: string; ref_token: string; converted_profile: string | null; created_at: string }[]>([])
+  const [invNames, setInvNames] = useState<Map<string, string>>(new Map())
+  const [copiedKey, setCopiedKey] = useState<string | null>(null)
+
+  const loadInvites = useCallback(async () => {
+    if (!am) return
+    const { data } = await supabase.from('leads')
+      .select('id, full_name, ref_token, converted_profile, created_at')
+      .eq('assigned_am', am.id).eq('source', 'whatsapp').order('created_at', { ascending: false }).limit(30)
+    const list = (data ?? []) as { id: string; full_name: string; ref_token: string; converted_profile: string | null; created_at: string }[]
+    setInvites(list)
+    const ids = list.map(l => l.converted_profile).filter((v): v is string => !!v)
+    if (ids.length) {
+      const { data: ps } = await supabase.from('profiles').select('id, display_name').in('id', ids)
+      setInvNames(new Map(((ps ?? []) as { id: string; display_name: string | null }[]).map(x => [x.id, x.display_name ?? ''])))
+    }
+  }, [am])
+
+  useEffect(() => { const id = window.setTimeout(() => { void loadInvites() }, 0); return () => window.clearTimeout(id) }, [loadInvites])
+
+  async function createInvite() {
+    const note = invNote.trim()
+    if (!note || invBusy) return
+    setInvBusy(true); setInvErr(null); setInvLink(null)
+    const { data, error } = await supabase.rpc('am_create_invite', { p_note: note })
+    setInvBusy(false)
+    if (error) { setInvErr(friendly(error)); return }
+    const tok = (data as { ref_token?: string } | null)?.ref_token
+    if (!tok) { setInvErr(friendly(new Error('no token'))); return }
+    setInvLink(`${SITE_URL}/signup?ref=${tok}`)
+    setInvNote('')
+    pingWorkline()
+    await loadInvites()
+  }
+
+  async function copyInv(key: string, text: string) {
+    try { await navigator.clipboard.writeText(text) } catch { /* 剪贴板被拒时静默,链接仍可手动长按复制 */ }
+    setCopiedKey(key)
+    window.setTimeout(() => setCopiedKey(k => (k === key ? null : k)), 1600)
+  }
 
   async function createFl() {
     if (!cEmail.trim() || cName.trim().length < 2) { setCErr(t.cEmail + ' / ' + t.cName); return }
@@ -149,6 +201,71 @@ export default function AmFreelancers() {
         <PageHeading sub={t.sub}>{t.title}</PageHeading>
         <Button className="px-4 py-2 text-sm" onClick={() => { setCOpen(true); setCMsg(null); setCErr(null) }}>{t.createBtn}</Button>
       </div>
+
+      {/* v85.11:邀请直归 —— 生成框常驻,历史清单默认折叠 */}
+      <Card className="mb-4 p-4">
+        <span className="font-mono text-[11px] uppercase tracking-[0.2em] text-faint">{t.invT}</span>
+        {invErr && <Alert tone="error">{invErr}</Alert>}
+        <div className="mt-3 flex flex-wrap items-end gap-2">
+          <div className="min-w-[220px] flex-1">
+            <Label>{t.invNote}</Label>
+            <Input value={invNote} onChange={e => setInvNote(e.target.value)} />
+          </div>
+          <Button className="px-4 py-2 text-sm" disabled={invBusy || !invNote.trim()} onClick={() => void createInvite()}>
+            {invBusy ? t.invBusyTxt : t.invGen}
+          </Button>
+        </div>
+        {invLink && (
+          <div className="mt-3 rounded-xl border border-verified-border bg-verified-bg p-3">
+            <p className="mb-1.5 font-mono text-[10px] uppercase tracking-wider text-verified-text">{t.invLink}</p>
+            <div className="flex items-center gap-2">
+              <p className="min-w-0 flex-1 break-all font-mono text-xs text-ink">{invLink}</p>
+              <Button variant="ghost" className="shrink-0 px-3 py-1.5 text-xs" onClick={() => void copyInv('new', invLink)}>
+                {copiedKey === 'new' ? t.invCopied : t.invCopy}
+              </Button>
+            </div>
+          </div>
+        )}
+        <div className="mt-4 border-t border-hair pt-3">
+          <button type="button" className="flex w-full items-center justify-between"
+            onClick={() => setHistOpen(o => !o)}>
+            <span className="font-mono text-[10px] uppercase tracking-wider text-faint">
+              {t.invHist}{invites.length > 0 ? ` · ${invites.length}` : ''}
+            </span>
+            <span aria-hidden className="font-mono text-sm text-muted">{histOpen ? '−' : '+'}</span>
+          </button>
+          {histOpen && (
+            invites.length === 0 ? (
+              <p className="mt-2 text-xs text-faint">{t.invEmpty}</p>
+            ) : (
+              <div className="mt-1">
+                {invites.map(l => (
+                  <div key={l.id} className="flex flex-wrap items-center justify-between gap-2 border-b border-hair py-2 last:border-b-0">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm text-ink">{l.full_name}</p>
+                      <p className="mt-0.5 font-mono text-[10px] text-faint">{dateShort(l.created_at)}</p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      {l.converted_profile ? (
+                        <StatusBadge status="verified" label={`${t.invDoneChip}${invNames.get(l.converted_profile) ? ` · ${invNames.get(l.converted_profile)}` : ''}`} />
+                      ) : (
+                        <>
+                          <StatusBadge status="pending" label={t.invPending} />
+                          <Button variant="ghost" className="px-2.5 py-1 text-xs"
+                            onClick={() => void copyInv(l.id, `${SITE_URL}/signup?ref=${l.ref_token}`)}>
+                            {copiedKey === l.id ? t.invCopied : t.invCopy}
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+          )}
+        </div>
+      </Card>
+
       <div className="mb-3">
         <Input value={q} onChange={e => setQ(e.target.value)} placeholder={t.search} />
       </div>
