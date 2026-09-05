@@ -1,0 +1,1 @@
+import{j as o}from"./index-J29Ji0Hp.js";import{C as r}from"./ChatCenter-DD3yHBQK.js";import{u as m}from"./i18n-BstG48Br.js";import"./site-CnuDnM3A.js";import"./eye-DiGl2uDB.js";import"./errors-BDg7rGeD.js";function u(){const{lang:t}=m();return o.jsx(r,{lang:t,myRole:"admin"})}export{u as default};

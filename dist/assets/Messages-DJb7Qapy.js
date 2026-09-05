@@ -1,0 +1,1 @@
+import{j as r}from"./index-J29Ji0Hp.js";import{C as e}from"./ChatCenter-DD3yHBQK.js";import"./site-CnuDnM3A.js";import"./eye-DiGl2uDB.js";import"./errors-BDg7rGeD.js";function n(){return r.jsx(e,{lang:"en",myRole:"user"})}export{n as default};
